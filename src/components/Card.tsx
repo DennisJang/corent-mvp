@@ -3,24 +3,39 @@ import type { ReactNode } from "react";
 type CardProps = {
   children: ReactNode;
   className?: string;
-  surface?: "white" | "air";
-  padding?: "md" | "lg";
+  padding?: "none" | "md" | "lg";
+  border?: "thin" | "base" | "strong" | "dashed";
+  radius?: "none" | "small";
+};
+
+const paddingClass: Record<NonNullable<CardProps["padding"]>, string> = {
+  none: "",
+  md: "p-6",
+  lg: "p-8",
+};
+
+const borderClass: Record<NonNullable<CardProps["border"]>, string> = {
+  thin: "border border-[color:var(--ink-12)]",
+  base: "border border-[color:var(--ink-20)]",
+  strong: "border border-black",
+  dashed: "border border-dashed border-[color:var(--line-dashed)]",
+};
+
+const radiusClass: Record<NonNullable<CardProps["radius"]>, string> = {
+  none: "rounded-none",
+  small: "rounded-[8px]",
 };
 
 export function Card({
   children,
   className = "",
-  surface = "white",
   padding = "md",
+  border = "thin",
+  radius = "none",
 }: CardProps) {
-  const surfaceClass =
-    surface === "white"
-      ? "bg-white"
-      : "bg-[color:var(--color-air)]";
-  const paddingClass = padding === "lg" ? "p-8" : "p-6";
   return (
     <div
-      className={`rounded-[20px] border border-[color:var(--border-subtle)] ${surfaceClass} ${paddingClass} ${className}`}
+      className={`bg-white ${borderClass[border]} ${paddingClass[padding]} ${radiusClass[radius]} ${className}`}
     >
       {children}
     </div>

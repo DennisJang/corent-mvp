@@ -18,17 +18,21 @@ export function DurationSelector({ product }: DurationSelectorProps) {
   const price = product.prices[selected];
 
   return (
-    <div className="flex flex-col gap-4">
-      <span className="text-caption uppercase text-[color:var(--color-primary)]">
-        대여 기간 선택
-      </span>
+    <div className="flex flex-col gap-6">
+      <div className="flex items-center justify-between border-b border-black pb-3">
+        <span className="text-caption">대여 기간</span>
+        <span className="text-caption text-[color:var(--ink-60)]">
+          1 / 3 / 7 days
+        </span>
+      </div>
       <div
-        className="grid grid-cols-3 gap-3"
+        className="grid grid-cols-3"
         role="radiogroup"
         aria-label="대여 기간"
       >
-        {DURATIONS.map((d) => {
+        {DURATIONS.map((d, i) => {
           const isSelected = d.key === selected;
+          const borderL = i === 0 ? "" : "border-l border-[color:var(--ink-12)]";
           return (
             <button
               key={d.key}
@@ -36,13 +40,19 @@ export function DurationSelector({ product }: DurationSelectorProps) {
               role="radio"
               aria-checked={isSelected}
               onClick={() => setSelected(d.key)}
-              className={`flex flex-col items-start gap-1 rounded-[12px] border px-4 py-3 text-left transition-colors focus:outline-none focus-visible:shadow-[0_0_0_4px_rgba(43,89,195,0.14)] ${
+              className={`flex flex-col items-start gap-2 px-4 py-4 text-left transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2 ${borderL} ${
                 isSelected
-                  ? "border-[color:var(--color-primary)] bg-[color:var(--tint-primary-soft)]"
-                  : "border-[color:var(--border-subtle)] bg-white hover:border-[color:var(--border-strong)]"
+                  ? "bg-black text-white"
+                  : "bg-white text-black hover:bg-[color:var(--ink-08)]"
               }`}
             >
-              <span className="text-body-small text-secondary">{d.label}</span>
+              <span
+                className={`text-caption ${
+                  isSelected ? "text-white/70" : "text-[color:var(--ink-60)]"
+                }`}
+              >
+                {d.label}
+              </span>
               <span className="text-title">
                 {formatKRW(product.prices[d.key])}
               </span>
@@ -50,11 +60,9 @@ export function DurationSelector({ product }: DurationSelectorProps) {
           );
         })}
       </div>
-      <div className="flex items-center justify-between pt-2">
-        <span className="text-body-small text-secondary">
-          선택한 기간 총 금액
-        </span>
-        <span className="text-h3">{formatKRW(price)}</span>
+      <div className="flex items-baseline justify-between border-t border-black pt-4">
+        <span className="text-small text-[color:var(--ink-60)]">총 금액</span>
+        <span className="text-h3 tracking-tight">{formatKRW(price)}</span>
       </div>
     </div>
   );

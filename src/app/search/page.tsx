@@ -1,8 +1,5 @@
 import { PageShell } from "@/components/PageShell";
-import { Badge } from "@/components/Badge";
-import { Card } from "@/components/Card";
 import { ProductCard } from "@/components/ProductCard";
-import { SectionHeader } from "@/components/SectionHeader";
 import { PRODUCTS } from "@/data/products";
 
 const PARSED_FILTERS = [
@@ -12,42 +9,107 @@ const PARSED_FILTERS = [
   { label: "안전 보증", value: "양방향" },
 ];
 
+const DURATION_FILTERS = [
+  { key: "1d", label: "01 / Day" },
+  { key: "3d", label: "03 / Days", active: true },
+  { key: "7d", label: "07 / Days" },
+];
+
 export default function SearchPage() {
   return (
     <PageShell>
-      <section className="container-main py-16">
-        <div className="flex flex-col gap-6 max-w-[720px]">
-          <Badge>AI 결과 요약</Badge>
-          <SectionHeader
-            size="h1"
-            title="며칠만 써볼 만한 물건들을 찾았어요."
-            description="“합정 근처에서 마사지건 3일만 써보고 싶어요” 와 비슷한 결과로 정리했어요."
-          />
-        </div>
+      <section className="border-b border-black">
+        <div className="container-main py-16 md:py-24">
+          <div className="grid-12 items-start gap-y-12">
+            <div className="col-span-12 md:col-span-7 flex flex-col gap-6">
+              <div className="flex items-baseline justify-between border-b border-black pb-4">
+                <span className="text-caption">Search Results</span>
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  AI Parsed
+                </span>
+              </div>
+              <h1 className="text-h1">
+                며칠만 써볼 만한 물건들을 찾았어요.
+              </h1>
+              <p className="text-body text-[color:var(--ink-60)] max-w-[520px]">
+                “합정 근처에서 마사지건 3일만 써보고 싶어요” 와 비슷한 결과로
+                정리했어요.
+              </p>
+            </div>
 
-        <Card padding="md" className="mt-12">
-          <div className="flex flex-wrap items-center gap-3">
-            <span className="text-body-small text-secondary">파싱된 조건</span>
-            <div className="flex flex-wrap gap-2">
-              {PARSED_FILTERS.map((f) => (
-                <Badge key={f.label}>
-                  {f.label} · {f.value}
-                </Badge>
-              ))}
+            <div className="col-span-12 md:col-span-5 border border-[color:var(--ink-12)]">
+              <div className="border-b border-[color:var(--ink-12)] px-5 py-3">
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  파싱된 조건
+                </span>
+              </div>
+              <ul className="flex flex-col">
+                {PARSED_FILTERS.map((f, i) => (
+                  <li
+                    key={f.label}
+                    className={`flex items-baseline justify-between px-5 py-3 ${
+                      i !== PARSED_FILTERS.length - 1
+                        ? "border-b border-[color:var(--ink-12)]"
+                        : ""
+                    }`}
+                  >
+                    <span className="text-small text-[color:var(--ink-60)]">
+                      {f.label}
+                    </span>
+                    <span className="text-body">{f.value}</span>
+                  </li>
+                ))}
+              </ul>
             </div>
           </div>
-        </Card>
+        </div>
+      </section>
 
-        <div className="flex items-center justify-between mt-16 mb-8 gap-6 flex-wrap">
+      <section className="border-b border-black">
+        <div className="container-main">
+          <div className="grid grid-cols-3">
+            {DURATION_FILTERS.map((d, i) => (
+              <button
+                key={d.key}
+                type="button"
+                className={`px-6 py-5 text-left transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2 ${
+                  i !== 0 ? "border-l border-[color:var(--ink-12)]" : ""
+                } ${
+                  d.active
+                    ? "bg-black text-white"
+                    : "bg-white text-black hover:bg-[color:var(--ink-08)]"
+                }`}
+              >
+                <span
+                  className={`text-caption ${
+                    d.active ? "text-white/70" : "text-[color:var(--ink-60)]"
+                  }`}
+                >
+                  Filter
+                </span>
+                <div className="text-title mt-1">{d.label}</div>
+              </button>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section className="container-main py-16">
+        <div className="flex items-baseline justify-between border-b border-black pb-4 mb-12">
           <span className="text-title">총 {PRODUCTS.length}개 결과</span>
-          <span className="text-body-small text-secondary">
-            정렬: AI 추천순 (모의)
+          <span className="text-caption text-[color:var(--ink-60)]">
+            정렬 / AI 추천순 (모의)
           </span>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border-l border-[color:var(--ink-12)]">
           {PRODUCTS.map((p) => (
-            <ProductCard key={p.id} product={p} />
+            <div
+              key={p.id}
+              className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px"
+            >
+              <ProductCard product={p} />
+            </div>
           ))}
         </div>
       </section>

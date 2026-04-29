@@ -1,5 +1,4 @@
 import Link from "next/link";
-import { Badge } from "./Badge";
 import { CATEGORY_LABEL, type Product } from "@/data/products";
 import { formatKRW } from "@/lib/format";
 
@@ -11,33 +10,42 @@ export function ProductCard({ product }: ProductCardProps) {
   return (
     <Link
       href={`/items/${product.id}`}
-      className="group block rounded-[20px] border border-[color:var(--border-subtle)] bg-white p-6 transition-colors hover:border-[color:var(--border-strong)] focus:outline-none focus-visible:shadow-[0_0_0_4px_rgba(43,89,195,0.14)]"
+      className="group block bg-white border border-[color:var(--ink-12)] hover:border-black transition-colors focus-ring"
     >
-      <div className="flex items-center justify-center w-full aspect-[4/3] rounded-[16px] bg-[color:var(--color-air)] mb-6">
-        <span className="text-h2 text-[color:var(--color-primary)] tracking-tight">
-          {product.hero.initials}
-        </span>
+      <div className="flex items-center justify-center w-full aspect-[4/3] border-b border-[color:var(--ink-12)] group-hover:border-black transition-colors">
+        <span className="text-h1 tracking-tight">{product.hero.initials}</span>
       </div>
-      <div className="flex flex-col gap-3">
-        <div className="flex flex-wrap gap-2">
-          <Badge>{CATEGORY_LABEL[product.category]}</Badge>
-          <Badge tone="neutral">{product.pickupArea}</Badge>
+      <div className="p-6 flex flex-col gap-4">
+        <div className="flex items-center justify-between text-caption text-[color:var(--ink-60)]">
+          <span>{CATEGORY_LABEL[product.category]}</span>
+          <span>VERIFIED</span>
         </div>
         <h3 className="text-title">{product.name}</h3>
-        <p className="text-body-small text-secondary line-clamp-2">
-          {product.summary}
-        </p>
-        <div className="divider my-2" />
-        <div className="flex items-end justify-between">
-          <div className="flex flex-col gap-1">
-            <span className="text-caption text-tertiary">3일 기준</span>
-            <span className="text-title">
-              {formatKRW(product.prices["3d"])}
-            </span>
-          </div>
-          <span className="text-body-small text-secondary">
-            1일 {formatKRW(product.prices["1d"])} · 7일{" "}
-            {formatKRW(product.prices["7d"])}
+
+        <div className="border-t border-[color:var(--ink-12)] pt-4 flex items-baseline justify-between">
+          <span className="text-h3 tracking-tight">
+            {formatKRW(product.prices["3d"])}
+          </span>
+          <span className="text-small text-[color:var(--ink-60)]">/ 3일</span>
+        </div>
+
+        <ul className="flex flex-col gap-1 text-small text-[color:var(--ink-60)]">
+          <li className="flex justify-between">
+            <span>1일</span>
+            <span>{formatKRW(product.prices["1d"])}</span>
+          </li>
+          <li className="flex justify-between">
+            <span>7일</span>
+            <span>{formatKRW(product.prices["7d"])}</span>
+          </li>
+        </ul>
+
+        <div className="border-t border-[color:var(--ink-12)] pt-4 flex flex-col gap-1">
+          <span className="text-small text-[color:var(--ink-60)]">
+            {product.pickupArea} · 직접 수령
+          </span>
+          <span className="text-small text-black">
+            안전 코드 사진 검증 완료
           </span>
         </div>
       </div>

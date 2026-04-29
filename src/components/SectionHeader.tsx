@@ -19,15 +19,15 @@ export function SectionHeader({
   const titleClass =
     size === "h1" ? "text-h1" : size === "h3" ? "text-h3" : "text-h2";
   return (
-    <div className={`flex flex-col gap-3 ${alignClass}`}>
+    <div className={`flex flex-col gap-4 ${alignClass}`}>
       {eyebrow && (
-        <span className="text-caption uppercase text-[color:var(--color-primary)]">
+        <span className="text-caption text-[color:var(--ink-60)]">
           {eyebrow}
         </span>
       )}
       <h2 className={titleClass}>{title}</h2>
       {description && (
-        <p className="text-body-large text-secondary max-w-[640px]">
+        <p className="text-body text-[color:var(--ink-60)] max-w-[640px]">
           {description}
         </p>
       )}

@@ -1,9 +1,7 @@
 import { PageShell } from "@/components/PageShell";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
-import { Card } from "@/components/Card";
 import { ProductCard } from "@/components/ProductCard";
-import { SectionHeader } from "@/components/SectionHeader";
 import { PRODUCTS } from "@/data/products";
 
 const SEARCH_CHIPS = [
@@ -16,17 +14,26 @@ const SEARCH_CHIPS = [
 
 const TRUST_POINTS = [
   {
+    n: "01",
     title: "AI 1차 + 사람 최종 검수",
-    desc: "필수 사진과 작동 상태를 자동으로 점검한 뒤, 사람이 한 번 더 확인해요.",
+    desc: "필수 사진과 작동 상태를 자동으로 점검한 뒤, 사람이 한 번 더 확인합니다.",
   },
   {
+    n: "02",
     title: "오늘 찍은 사진 검증",
     desc: "그날의 안전 코드를 제품 옆에 두고 촬영해 신선도를 확인합니다.",
   },
   {
+    n: "03",
     title: "반납 확인 후 정산",
-    desc: "거래는 플랫폼 안에서 진행되고, 반납이 확인되면 수수료 10%를 제외한 금액이 정산돼요.",
+    desc: "거래는 플랫폼 안에서 진행되고, 반납이 확인되면 수수료 10%를 제외한 금액이 정산됩니다.",
   },
+];
+
+const DURATIONS = [
+  { key: "1d", label: "01 / DAY", title: "하루만 살아보기" },
+  { key: "3d", label: "03 / DAYS", title: "주말 동안 살아보기" },
+  { key: "7d", label: "07 / DAYS", title: "한 주 동안 살아보기" },
 ];
 
 export default function LandingPage() {
@@ -34,130 +41,314 @@ export default function LandingPage() {
 
   return (
     <PageShell>
-      <section className="hero-wash">
-        <div className="container-main py-24 flex flex-col gap-12">
-          <div className="flex flex-col items-start gap-6 max-w-[720px]">
-            <Badge>Seoul beta · AI 렌탈</Badge>
-            <h1 className="text-display">
-              사기 전에,
-              <br />
-              며칠만 살아보기.
-            </h1>
-            <p className="text-body-large text-secondary max-w-[640px]">
-              마사지건, 홈케어 디바이스, 소형 운동기구를 서울에서 1일, 3일, 7일
-              동안 빌려 써보세요. 평가는 직접 써본 뒤에.
-            </p>
-            <div className="flex flex-wrap gap-3">
-              <Button href="/search">며칠 써볼 물건 찾기</Button>
-              <Button href="/sell" variant="secondary">
-                내 물건 빌려주기
-              </Button>
-            </div>
-          </div>
-
-          <Card padding="lg" className="max-w-[720px]">
-            <div className="flex flex-col gap-4">
-              <div className="flex items-center gap-3">
-                <span className="inline-flex w-9 h-9 rounded-full bg-[color:var(--color-air)] items-center justify-center text-[color:var(--color-primary)] font-bold">
-                  AI
+      {/* Hero — Swiss poster, 7 / 5 split */}
+      <section className="border-b border-black">
+        <div className="container-main py-24 md:py-32">
+          <div className="grid-12 items-start gap-y-16">
+            {/* Left 7 columns — large headline */}
+            <div className="col-span-12 md:col-span-7 flex flex-col gap-8">
+              <div className="flex items-baseline justify-between border-b border-black pb-4">
+                <span className="text-caption">Seoul Beta / AI Rental</span>
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  v0.1
                 </span>
-                <div className="flex flex-col">
-                  <span className="text-title">무엇을 며칠 써보고 싶나요?</span>
-                  <span className="text-body-small text-secondary">
-                    자연어로 입력하면 카테고리·기간·지역을 자동으로 찾아드려요.
+              </div>
+              <h1 className="text-display">
+                사기 전에,
+                <br />
+                며칠만
+                <br />
+                살아보기.
+              </h1>
+              <p className="text-body text-[color:var(--ink-80)] max-w-[480px]">
+                서울에서 마사지건, 홈케어 디바이스, 소형 운동기구를 1일·3일·7일
+                동안 빌려 써보세요. 평가는 직접 써본 뒤에.
+              </p>
+              <div className="flex flex-wrap gap-3 pt-4">
+                <Button href="/search">며칠 써볼 물건 찾기</Button>
+                <Button href="/sell" variant="secondary">
+                  내 물건 빌려주기
+                </Button>
+              </div>
+            </div>
+
+            {/* Right 5 columns — AI search + orbital diagram */}
+            <div className="col-span-12 md:col-span-5 flex flex-col gap-6">
+              <OrbitDiagram />
+              <div className="bg-white border border-black">
+                <div className="border-b border-black px-5 py-3 flex items-baseline justify-between">
+                  <span className="text-caption">AI Search / Mock</span>
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    01
                   </span>
                 </div>
-              </div>
-              <div className="flex items-center gap-3 rounded-[12px] border border-[color:var(--border-subtle)] bg-[color:var(--color-air)] px-4 h-[52px]">
-                <span className="flex-1 text-body text-tertiary">
-                  예) 합정 근처에서 마사지건 3일만 써보고 싶어요
-                </span>
-                <span className="text-caption text-tertiary">Mock</span>
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {SEARCH_CHIPS.map((chip) => (
-                  <Badge key={chip} tone="neutral">
-                    {chip}
-                  </Badge>
-                ))}
+                <div className="px-5 py-6 flex flex-col gap-4">
+                  <span className="text-title">
+                    무엇을 며칠 써보고 싶나요?
+                  </span>
+                  <span className="text-small text-[color:var(--ink-60)]">
+                    자연어로 입력하면 카테고리·기간·지역을 자동으로 찾아드려요.
+                  </span>
+                  <div className="border-b border-dashed border-[color:var(--line-dashed)] pb-3 mt-2">
+                    <span className="text-body text-[color:var(--ink-40)]">
+                      예) 합정 근처에서 마사지건 3일만 써보고 싶어요
+                    </span>
+                  </div>
+                  <div className="flex flex-wrap gap-2 pt-2">
+                    {SEARCH_CHIPS.map((chip) => (
+                      <Badge key={chip} variant="dashed">
+                        {chip}
+                      </Badge>
+                    ))}
+                  </div>
+                </div>
               </div>
             </div>
-          </Card>
+          </div>
         </div>
       </section>
 
-      <section className="bg-white border-y border-[color:var(--border-subtle)]">
-        <div className="container-main py-16">
-          <SectionHeader
-            eyebrow="안전한 거래"
-            title="복잡한 검증을 단순한 신뢰로."
-            description="CoRent는 검수, 보증, 정산을 사용자가 보지 않아도 되는 만큼 숨깁니다. 화면에는 필요한 것만 남아요."
-          />
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mt-12">
-            {TRUST_POINTS.map((p) => (
-              <Card key={p.title} padding="lg">
+      {/* Duration strip — 1 / 3 / 7 */}
+      <section className="border-b border-black">
+        <div className="container-main">
+          <div className="grid grid-cols-1 md:grid-cols-3">
+            {DURATIONS.map((d, i) => (
+              <div
+                key={d.key}
+                className={`px-8 py-12 ${
+                  i !== 0
+                    ? "md:border-l border-t md:border-t-0 border-[color:var(--ink-12)]"
+                    : ""
+                }`}
+              >
                 <div className="flex flex-col gap-3">
-                  <h3 className="text-title">{p.title}</h3>
-                  <p className="text-body-small text-secondary">{p.desc}</p>
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    {d.label}
+                  </span>
+                  <span className="text-h3 tracking-tight">{d.title}</span>
                 </div>
-              </Card>
+              </div>
             ))}
           </div>
         </div>
       </section>
 
-      <section className="container-main py-24">
-        <div className="flex items-end justify-between mb-12 gap-6 flex-wrap">
-          <SectionHeader
-            eyebrow="오늘의 추천"
-            title="며칠만 살아볼 만한 물건들."
-            description="서울 직거래 기준으로 큐레이션된 인기 카테고리."
-          />
-          <Button href="/search" variant="secondary" size="md">
-            전체 결과 보기
-          </Button>
-        </div>
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          {featured.map((p) => (
-            <ProductCard key={p.id} product={p} />
-          ))}
+      {/* Trust system — numbered */}
+      <section className="border-b border-black">
+        <div className="container-main py-24">
+          <div className="grid-12 items-start gap-y-12">
+            <div className="col-span-12 md:col-span-4 flex flex-col gap-6">
+              <span className="text-caption">Trust System</span>
+              <h2 className="text-h2">
+                복잡한 검증을
+                <br />
+                단순한 신뢰로.
+              </h2>
+              <p className="text-body text-[color:var(--ink-60)] max-w-[360px]">
+                CoRent는 검수, 보증, 정산을 사용자가 보지 않아도 되는 만큼
+                숨깁니다. 화면에는 필요한 것만 남아요.
+              </p>
+            </div>
+            <ol className="col-span-12 md:col-span-8 flex flex-col">
+              {TRUST_POINTS.map((p, i) => (
+                <li
+                  key={p.n}
+                  className={`grid grid-cols-[80px_1fr] gap-8 py-8 ${
+                    i !== TRUST_POINTS.length - 1
+                      ? "border-b border-[color:var(--ink-12)]"
+                      : ""
+                  } ${i === 0 ? "border-t border-black" : ""}`}
+                >
+                  <span className="text-h3 tracking-tight">{p.n}</span>
+                  <div className="flex flex-col gap-3">
+                    <h3 className="text-title">{p.title}</h3>
+                    <p className="text-body text-[color:var(--ink-60)]">
+                      {p.desc}
+                    </p>
+                  </div>
+                </li>
+              ))}
+            </ol>
+          </div>
         </div>
       </section>
 
-      <section className="bg-white border-t border-[color:var(--border-subtle)]">
-        <div className="container-main py-24 grid grid-cols-1 md:grid-cols-2 gap-12 items-start">
-          <SectionHeader
-            eyebrow="판매자에게"
-            title={
-              <>
+      {/* Featured — 3-column editorial grid */}
+      <section className="border-b border-black">
+        <div className="container-main py-24">
+          <div className="flex items-end justify-between flex-wrap gap-6 border-b border-black pb-6 mb-12">
+            <div className="flex flex-col gap-3">
+              <span className="text-caption">Selected / 03 items</span>
+              <h2 className="text-h2">며칠만 살아볼 만한 물건들</h2>
+            </div>
+            <Button href="/search" variant="secondary" size="md">
+              전체 결과 보기
+            </Button>
+          </div>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-l border-[color:var(--ink-12)]">
+            {featured.map((p) => (
+              <div
+                key={p.id}
+                className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px"
+              >
+                <ProductCard product={p} />
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Seller — 5 / 7 split */}
+      <section>
+        <div className="container-main py-24">
+          <div className="grid-12 items-start gap-y-12">
+            <div className="col-span-12 md:col-span-5 flex flex-col gap-6">
+              <span className="text-caption">For Sellers</span>
+              <h2 className="text-h2">
                 집에 잠든 물건을
                 <br />
                 작은 렌탈 사업장으로.
-              </>
-            }
-            description="대화형 AI가 등록을 도와줘요. 사진 몇 장과 짧은 답변으로 첫 게시까지 완료할 수 있어요."
-          />
-          <Card padding="lg">
-            <div className="flex flex-col gap-6">
-              <div className="flex items-baseline justify-between">
-                <span className="text-body text-secondary">수수료</span>
-                <span className="text-h3">10%</span>
+              </h2>
+              <p className="text-body text-[color:var(--ink-60)] max-w-[400px]">
+                대화형 AI가 등록을 도와줘요. 사진 몇 장과 짧은 답변으로 첫
+                게시까지 완료할 수 있어요.
+              </p>
+              <div className="pt-2">
+                <Button href="/sell">대화로 등록 시작하기</Button>
               </div>
-              <div className="divider" />
-              <div className="flex items-baseline justify-between">
-                <span className="text-body text-secondary">정산 시점</span>
-                <span className="text-body">반납 확인 후</span>
-              </div>
-              <div className="divider" />
-              <div className="flex items-baseline justify-between">
-                <span className="text-body text-secondary">시리얼 번호</span>
-                <span className="text-body">비공개 보관</span>
-              </div>
-              <Button href="/sell">대화로 등록 시작하기</Button>
             </div>
-          </Card>
+            <div className="col-span-12 md:col-span-7 border border-black">
+              <div className="grid grid-cols-2">
+                <div className="px-6 py-8 border-r border-b border-black flex flex-col gap-2">
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    수수료
+                  </span>
+                  <span className="text-h2 tracking-tight">10%</span>
+                </div>
+                <div className="px-6 py-8 border-b border-black flex flex-col gap-2">
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    정산 시점
+                  </span>
+                  <span className="text-h3 tracking-tight">반납 확인 후</span>
+                </div>
+                <div className="px-6 py-8 border-r border-black flex flex-col gap-2">
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    시리얼 번호
+                  </span>
+                  <span className="text-h3 tracking-tight">비공개 보관</span>
+                </div>
+                <div className="px-6 py-8 flex flex-col gap-2">
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    수령 방식
+                  </span>
+                  <span className="text-h3 tracking-tight">서울 직거래</span>
+                </div>
+              </div>
+            </div>
+          </div>
         </div>
       </section>
     </PageShell>
+  );
+}
+
+function OrbitDiagram() {
+  return (
+    <div
+      className="w-full aspect-square border border-[color:var(--ink-12)] flex items-center justify-center"
+      aria-hidden
+    >
+      <svg
+        viewBox="0 0 320 320"
+        width="100%"
+        height="100%"
+        fill="none"
+        stroke="black"
+        strokeWidth="1"
+      >
+        {/* Outer dashed orbit */}
+        <circle
+          cx="160"
+          cy="160"
+          r="140"
+          strokeDasharray="3 4"
+          opacity="0.4"
+        />
+        {/* Mid solid orbit */}
+        <circle cx="160" cy="160" r="92" opacity="0.6" />
+        {/* Inner dashed */}
+        <circle cx="160" cy="160" r="48" strokeDasharray="3 4" opacity="0.5" />
+        {/* Axes */}
+        <line x1="20" y1="160" x2="300" y2="160" opacity="0.12" />
+        <line x1="160" y1="20" x2="160" y2="300" opacity="0.12" />
+
+        {/* Nodes */}
+        <circle cx="160" cy="160" r="4" fill="black" stroke="none" />
+        <circle cx="252" cy="160" r="5" fill="white" stroke="black" />
+        <circle cx="160" cy="68" r="5" fill="white" stroke="black" />
+        <circle
+          cx="68"
+          cy="160"
+          r="5"
+          fill="white"
+          stroke="black"
+          strokeDasharray="2 2"
+        />
+        <circle cx="160" cy="252" r="5" fill="black" stroke="none" />
+        <circle cx="300" cy="160" r="3" fill="black" stroke="none" />
+
+        {/* Labels */}
+        <text
+          x="160"
+          y="180"
+          fontFamily="Helvetica, Arial, sans-serif"
+          fontSize="8"
+          fill="black"
+          textAnchor="middle"
+        >
+          USER
+        </text>
+        <text
+          x="252"
+          y="148"
+          fontFamily="Helvetica, Arial, sans-serif"
+          fontSize="8"
+          fill="black"
+          textAnchor="middle"
+        >
+          ITEM
+        </text>
+        <text
+          x="160"
+          y="56"
+          fontFamily="Helvetica, Arial, sans-serif"
+          fontSize="8"
+          fill="black"
+          textAnchor="middle"
+        >
+          AI
+        </text>
+        <text
+          x="68"
+          y="148"
+          fontFamily="Helvetica, Arial, sans-serif"
+          fontSize="8"
+          fill="black"
+          textAnchor="middle"
+        >
+          MATCH
+        </text>
+        <text
+          x="160"
+          y="270"
+          fontFamily="Helvetica, Arial, sans-serif"
+          fontSize="8"
+          fill="black"
+          textAnchor="middle"
+        >
+          PICKUP
+        </text>
+      </svg>
+    </div>
   );
 }

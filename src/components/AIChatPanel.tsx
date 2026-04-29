@@ -1,57 +1,53 @@
-import { Card } from "./Card";
-
-type ChatTurn = {
-  role: "ai" | "user";
-  text: string;
-};
+type ConversationBlock =
+  | { kind: "ai"; index: number; text: string }
+  | { kind: "user"; text: string };
 
 type AIChatPanelProps = {
-  turns: ChatTurn[];
+  blocks: ConversationBlock[];
   hint?: string;
 };
 
-export function AIChatPanel({ turns, hint }: AIChatPanelProps) {
+export function AIChatPanel({ blocks, hint }: AIChatPanelProps) {
   return (
-    <Card padding="lg" className="flex flex-col gap-6">
-      <div className="flex items-center gap-3">
-        <span className="inline-flex w-9 h-9 rounded-full bg-[color:var(--color-air)] items-center justify-center text-[color:var(--color-primary)] font-bold">
-          AI
-        </span>
-        <div className="flex flex-col">
-          <span className="text-title">CoRent AI</span>
-          <span className="text-body-small text-secondary">
-            글을 쓰지 않아도 괜찮아요. 대화하면 상품 페이지가 만들어져요.
-          </span>
-        </div>
-      </div>
-      <div className="flex flex-col gap-3">
-        {turns.map((turn, i) => (
-          <ChatBubble key={i} turn={turn} />
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <span className="text-caption">CoRent AI / 대화 기록</span>
+        <span className="text-caption text-[color:var(--ink-60)]">Mock</span>
+      </header>
+      <ol className="flex flex-col">
+        {blocks.map((block, i) => (
+          <li
+            key={i}
+            className="grid grid-cols-[120px_1fr] gap-6 px-6 py-6 border-b border-[color:var(--ink-12)]"
+          >
+            {block.kind === "ai" ? (
+              <>
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  AI Q.{String(block.index).padStart(2, "0")}
+                </span>
+                <p className="text-body text-black">{block.text}</p>
+              </>
+            ) : (
+              <>
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  Seller
+                </span>
+                <p className="text-body text-[color:var(--ink-80)]">
+                  {block.text}
+                </p>
+              </>
+            )}
+          </li>
         ))}
-      </div>
-      <div className="flex items-center gap-3 rounded-[12px] border border-[color:var(--border-subtle)] bg-white px-4 h-[52px]">
-        <span className="flex-1 text-body text-tertiary">
+      </ol>
+      <div className="grid grid-cols-[120px_1fr] gap-6 px-6 py-5">
+        <span className="text-caption text-[color:var(--ink-60)]">
+          Seller / 입력
+        </span>
+        <span className="text-body text-[color:var(--ink-40)] border-b border-dashed border-[color:var(--line-dashed)] pb-2">
           {hint ?? "메시지 입력 (모의 화면)"}
         </span>
-        <span className="text-caption text-tertiary">Mock</span>
       </div>
-    </Card>
-  );
-}
-
-function ChatBubble({ turn }: { turn: ChatTurn }) {
-  const isAI = turn.role === "ai";
-  return (
-    <div className={`flex ${isAI ? "justify-start" : "justify-end"}`}>
-      <div
-        className={`max-w-[460px] rounded-[16px] px-4 py-3 text-body ${
-          isAI
-            ? "bg-[color:var(--color-air)] text-[color:var(--color-ink)]"
-            : "bg-[color:var(--color-primary)] text-white"
-        }`}
-      >
-        {turn.text}
-      </div>
-    </div>
+    </section>
   );
 }

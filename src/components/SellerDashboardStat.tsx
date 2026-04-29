@@ -1,23 +1,31 @@
-import { Card } from "./Card";
-
 type SellerDashboardStatProps = {
   label: string;
   value: string;
   hint?: string;
+  index?: number;
 };
 
 export function SellerDashboardStat({
   label,
   value,
   hint,
+  index,
 }: SellerDashboardStatProps) {
+  const number = index !== undefined ? String(index + 1).padStart(2, "0") : null;
   return (
-    <Card padding="md">
-      <div className="flex flex-col gap-2">
-        <span className="text-caption uppercase text-tertiary">{label}</span>
-        <span className="text-h3">{value}</span>
-        {hint && <span className="text-body-small text-secondary">{hint}</span>}
+    <div className="bg-white border border-[color:var(--ink-12)] px-6 py-8 flex flex-col gap-4">
+      <div className="flex items-baseline justify-between">
+        <span className="text-caption text-[color:var(--ink-60)]">{label}</span>
+        {number && (
+          <span className="text-caption text-[color:var(--ink-40)]">
+            {number}
+          </span>
+        )}
       </div>
-    </Card>
+      <span className="text-h2 tracking-tight leading-none">{value}</span>
+      {hint && (
+        <span className="text-small text-[color:var(--ink-60)]">{hint}</span>
+      )}
+    </div>
   );
 }

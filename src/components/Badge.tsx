@@ -1,23 +1,29 @@
 import type { ReactNode } from "react";
 
+type Variant = "filled" | "outline" | "dashed" | "selected";
+
 type BadgeProps = {
   children: ReactNode;
-  tone?: "primary" | "neutral";
+  variant?: Variant;
   className?: string;
+};
+
+const variantStyles: Record<Variant, string> = {
+  filled: "bg-black text-white border border-black",
+  outline: "bg-white text-black border border-[color:var(--ink-20)]",
+  dashed:
+    "bg-white text-black border border-dashed border-[color:var(--line-dashed)]",
+  selected: "bg-white text-black border border-black",
 };
 
 export function Badge({
   children,
-  tone = "primary",
+  variant = "outline",
   className = "",
 }: BadgeProps) {
-  const styles =
-    tone === "primary"
-      ? "bg-[color:var(--color-air)] text-[color:var(--color-primary)] border border-[color:var(--border-primary-soft)]"
-      : "bg-white text-[color:var(--color-ink)] border border-[color:var(--border-subtle)]";
   return (
     <span
-      className={`inline-flex items-center h-7 px-3 rounded-full text-[12px] font-medium tracking-[0.01em] ${styles} ${className}`}
+      className={`inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase ${variantStyles[variant]} ${className}`}
     >
       {children}
     </span>
