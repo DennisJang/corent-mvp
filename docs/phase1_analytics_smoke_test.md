@@ -29,6 +29,8 @@ generation, and rotation. The agent has explicitly stopped at these.
      **Development** scopes:
      - `SUPABASE_URL`
      - `SUPABASE_SERVICE_ROLE_KEY`
+     - `SUPABASE_ANON_KEY` (server-only — used by the SSR auth client
+       only, never the browser)
      - `FOUNDER_ADMIN_EMAIL_ALLOWLIST` (the founder's email; one entry)
    - Leave `ENABLE_ANALYTICS_BETA` **unset** for the first deploy. We will
      flip it deliberately later.
@@ -41,10 +43,18 @@ generation, and rotation. The agent has explicitly stopped at these.
      the Supabase magic-link.
 
 4. **Supabase Auth — magic-link**
-   - In Supabase, enable Email magic-link auth.
-   - Restrict the redirect URL to the production origin's
-     `/admin/auth/callback` route (the route does not exist in this PR
-     yet; see §F follow-up).
+   - In Supabase, enable the Email auth provider.
+   - **Disable** "enable sign-ups" / "confirm email" so anyone who is
+     not already a user cannot create an account; the founder account
+     is created manually in the Supabase dashboard. The sign-in route
+     also passes `shouldCreateUser: false` defense-in-depth.
+   - Set **Site URL** to the production origin.
+   - Add to **Additional Redirect URLs**:
+     - `https://<prod-origin>/admin/auth/callback`
+     - `https://<dev-origin>/admin/auth/callback`
+     - (For local dev only:) `http://localhost:3000/admin/auth/callback`
+   - Set **Session / JWT expiry** to **12 hours** per
+     [`corent_security_review_phase1_2026-04-30.md` §3.6](corent_security_review_phase1_2026-04-30.md). The 12-hour expiry is enforced by Supabase Auth (the source of truth); the app code does not extend it. The `requireFounderSession()` server check rejects expired tokens via `getUser()`.
 
 > **Stop point reminder.** Steps A1–A4 require third-party console
 > access. The agent stops here and requests a human follow-up.
@@ -143,31 +153,100 @@ Switch to the `service_role` (Settings → API → service-role key) and
 verify the same insert succeeds. **Do not paste the service-role key
 into anything but a private SQL session.**
 
-## F. Founder admin allowlist & magic-link
+## F. Founder admin allowlist & magic-link (Phase 1.5)
 
-**Today, in this PR:** the admin dashboard at `/admin/dashboard` returns
-404 for every visitor regardless of session, because the
-`requireFounderSession()` reader has no Supabase SSR helpers wired. This
-is the documented fail-closed default of Phase 1.
+`@supabase/ssr` is now wired. The `requireFounderSession()` reader
+validates a Supabase session via the SSR client (anon key), and the
+allowlist check stays the only authorization signal. The magic-link
+callback route at `/admin/auth/callback` exchanges the one-time code
+for a session, and `/admin/login` is the founder's entry point.
 
-**Pre-conditions before unlocking:**
+The agent has implemented every code-level surface but **has not
+configured Supabase Auth in any real project**. Steps F1–F6 below are
+the human run-through.
 
-- A separate approved PR adds Supabase SSR session helpers (`@supabase/ssr`
-  or equivalent), wires the magic-link callback at
-  `/admin/auth/callback`, and replaces the `closedSessionReader` with a
-  real one.
-- That PR must include integration tests for: no session → 404,
-  non-allowlisted email → 404, allowlisted email → 200, empty
-  allowlist → 404 even with a session.
-
-**Until then, manual verification:**
+### F1. Verify env (`.env.local` for local; Vercel env for prod)
 
 ```bash
-# Anonymous visit (no session, soft outer gate respected):
-curl -i https://<your-vercel-domain>/admin/dashboard
-# Expect: 401 from Vercel Deployment Protection, OR 404 if password is
-# entered but the session reader fails closed.
+SUPABASE_URL=<dev-or-prod-project-url>
+SUPABASE_ANON_KEY=<dev-or-prod-anon-key>
+SUPABASE_SERVICE_ROLE_KEY=<dev-or-prod-service-role-key>
+FOUNDER_ADMIN_EMAIL_ALLOWLIST=founder@example.com
 ```
+
+Service-role key is **only** for analytics writes / admin reads. It is
+**never** used for user session / auth. Sign-in / callback / dashboard
+auth runs on the anon key.
+
+### F2. Unauthenticated dashboard request → 404
+
+```bash
+curl -i http://localhost:3000/admin/dashboard
+# Expect: 404. requireFounderSession() returns null because there is
+# no Supabase session cookie.
+```
+
+### F3. Non-allowlisted email → generic response, dashboard stays 404
+
+Open `http://localhost:3000/admin/login`. Submit an email that is
+**not** in `FOUNDER_ADMIN_EMAIL_ALLOWLIST`.
+
+- Expect: identical generic JSON response as for an allowlisted email.
+- Expect: **no** magic-link email sent (the allowlist check fails before
+  Supabase `signInWithOtp` is called).
+- Visit `/admin/dashboard`: still 404 (no session was created).
+
+### F4. Allowlisted email → magic-link delivered
+
+Submit the founder's allowlisted email at `/admin/login`.
+
+- Expect: same generic response.
+- Expect: a magic-link email arrives at the founder's inbox from
+  Supabase Auth. The link points at `/admin/auth/callback?code=...`.
+- Click the link.
+
+### F5. Callback exchanges the code → 303 redirect to `/admin/dashboard`
+
+The browser lands on `/admin/auth/callback?code=...`. The route:
+
+- exchanges the code via `supabase.auth.exchangeCodeForSession`,
+- writes the session cookies via the SSR client,
+- redirects with **303** to `/admin/dashboard`.
+
+If the code is missing, expired, or rejected, the response is a `303`
+to `/admin/login?e=1` — never a token / code echo, never a stack trace.
+
+### F6. Allowlisted founder views dashboard
+
+Visit `/admin/dashboard` while signed in. Expect:
+
+- 200 + the read-only aggregate tiles render.
+- The header shows the lowercased founder email (no other PII).
+- `ENABLE_ANALYTICS_BETA=false` still prevents `/api/events` writes —
+  the dashboard renders zeroes for the time being.
+
+### F7. Open-redirect / `next` defense
+
+```bash
+curl -i "http://localhost:3000/admin/auth/callback?code=anything&next=https://evil.example.com"
+# Expect: 303 to /admin/login?e=1 (code is invalid) — but even with a
+# valid code, the next param would have been rejected by safeAdminNextPath
+# and the redirect would have gone to /admin/dashboard, never to evil.
+
+curl -i "http://localhost:3000/admin/auth/callback?code=anything&next=//evil.example.com"
+# Expect: same — protocol-relative paths are rejected.
+```
+
+### F8. 12-hour session expiry (human verification)
+
+Per [§3.6](corent_security_review_phase1_2026-04-30.md), admin
+sessions expire after 12 hours. This is **enforced by Supabase Auth
+configuration**, not by the app code. Verification:
+
+- Sign in (F4–F6).
+- Wait 12 hours (or use Supabase Auth admin API to expire the session).
+- Reload `/admin/dashboard`. Expect 404 — `getUser()` rejects the expired
+  JWT, `requireFounderSession()` returns null.
 
 ## G. Deployed prod — flag-off verification
 
@@ -259,7 +338,9 @@ truncate table public.sanitizer_rejections;
 | A3 — Vercel Deployment Protection | Real password, project setting |
 | A4 — Supabase Auth provider config | Live auth provider toggle |
 | §E — RLS verification | Service-role SQL session |
-| §F — Magic-link wiring (follow-up PR) | Adds `@supabase/ssr` (separate approval) |
+| §A4 — Supabase Auth redirect URL allowlist | Real Supabase project setting |
+| §A4 — Supabase Auth 12h session expiry | Real Supabase project setting |
+| §F — Founder account creation in Supabase | Browser login + manual user creation |
 | §H — Flip flag in prod | Production env change |
 | §K — Rollback (truncate) | Destructive operation |
 

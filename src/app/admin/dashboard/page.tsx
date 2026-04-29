@@ -1,8 +1,14 @@
 // Founder admin dashboard v0. Server component. Read-only aggregate tiles.
-// Auth: requires a Supabase session whose email is in
-// FOUNDER_ADMIN_EMAIL_ALLOWLIST. Today, until @supabase/ssr is approved
-// in a follow-up PR, the session reader always returns null and this page
-// returns 404 for every visitor.
+// Auth: requires a Supabase session (read via @supabase/ssr) whose email
+// is in FOUNDER_ADMIN_EMAIL_ALLOWLIST. The allowlist is the only
+// authorization signal; user_metadata.role and any client-supplied flag
+// are ignored. Missing session, missing email, or non-allowlisted email
+// all return 404 (not 401) to avoid disclosing the admin surface.
+//
+// Phase 1.5: Supabase Auth must be configured externally before this
+// page is reachable — the magic-link redirect URL needs to point at
+// `/admin/auth/callback`. Until that is configured, every visit still
+// 404s, which is the documented fail-closed default.
 
 import { notFound } from "next/navigation";
 import { requireFounderSession } from "@/server/admin/auth";

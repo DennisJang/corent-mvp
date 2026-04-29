@@ -3,6 +3,7 @@ import {
   getFounderAllowlist,
   isAllowlistedFounder,
   isAnalyticsBetaEnabled,
+  readSupabaseAuthEnv,
   readSupabaseServerEnv,
 } from "./env";
 
@@ -10,6 +11,7 @@ afterEach(() => {
   delete process.env.ENABLE_ANALYTICS_BETA;
   delete process.env.SUPABASE_URL;
   delete process.env.SUPABASE_SERVICE_ROLE_KEY;
+  delete process.env.SUPABASE_ANON_KEY;
   delete process.env.FOUNDER_ADMIN_EMAIL_ALLOWLIST;
 });
 
@@ -61,6 +63,45 @@ describe("readSupabaseServerEnv", () => {
     if (!r.ok) return;
     expect(r.env.url).toBe("https://example.supabase.co");
     expect(r.env.serviceRoleKey).toBe("fake-service-role-key");
+  });
+});
+
+describe("readSupabaseAuthEnv (SSR auth — anon key only)", () => {
+  it("returns missing when both vars are unset", () => {
+    const r = readSupabaseAuthEnv();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.missing).toContain("SUPABASE_URL");
+    expect(r.missing).toContain("SUPABASE_ANON_KEY");
+  });
+
+  it("returns missing when only the URL is set", () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    const r = readSupabaseAuthEnv();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.missing).toEqual(["SUPABASE_ANON_KEY"]);
+  });
+
+  it("returns missing when only the anon key is set", () => {
+    process.env.SUPABASE_ANON_KEY = "fake-anon-key";
+    const r = readSupabaseAuthEnv();
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.missing).toEqual(["SUPABASE_URL"]);
+  });
+
+  it("returns ok with both vars present — and never reads service role key", () => {
+    process.env.SUPABASE_URL = "https://example.supabase.co";
+    process.env.SUPABASE_ANON_KEY = "fake-anon-key";
+    process.env.SUPABASE_SERVICE_ROLE_KEY = "service-role-should-not-leak";
+    const r = readSupabaseAuthEnv();
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.env.url).toBe("https://example.supabase.co");
+    expect(r.env.anonKey).toBe("fake-anon-key");
+    // The auth env shape has no service role field — defense in depth.
+    expect("serviceRoleKey" in r.env).toBe(false);
   });
 });
 

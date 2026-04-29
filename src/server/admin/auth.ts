@@ -7,36 +7,45 @@
 // - non-allowlisted email returns 404 (not 401) so the admin surface is
 //   not disclosed.
 //
-// **Phase 1 caveat:** the magic-link → session-cookie flow in Next.js App
-// Router needs `@supabase/ssr` (or equivalent SSR helpers) to bridge the
-// Supabase auth cookie format. That package is **not** installed in this
-// PR — the security review explicitly cleared only `@supabase/supabase-js`.
-//
-// As a result, `requireFounderSession()` always fails closed today: the
-// admin surface is provably unreachable until the SSR helpers are added in
-// a separate approved PR. The allowlist + comparator logic is fully
-// implemented and unit-tested so the follow-up PR is small and reviewable.
+// Phase 1.5: this module now reads the real Supabase SSR session via
+// `@supabase/ssr` (`createAdminAuthClient` in `./supabase-ssr.ts`). The
+// authorization source is **only** the server-side allowlist — Supabase
+// `user_metadata.role`, custom claims, and any client-supplied flags are
+// ignored. If the SSR auth env is missing, the client factory returns
+// null and we fail closed. If the session has no email, we fail closed.
 
 import { isAllowlistedFounder } from "@/server/analytics/env";
+import { createAdminAuthClient } from "./supabase-ssr";
 
 export type FounderSession = {
   email: string;
 };
 
-// Implementation seam: a future PR will replace this with the real Supabase
-// SSR session reader. Until then, this returns null and the admin route
-// 404s. The decision to keep the boundary closed by default is intentional;
-// see Phase 1 security review §3.4 and §3.13.
+// A `SessionReader` returns the session email (or null) without exposing
+// any other Supabase user metadata. We deliberately surface only the
+// email so callers can never accidentally trust `role` / custom claims.
 export type SessionReader = () => Promise<{ email: string } | null>;
 
-const closedSessionReader: SessionReader = async () => null;
-let activeReader: SessionReader = closedSessionReader;
+const defaultSessionReader: SessionReader = async () => {
+  const client = await createAdminAuthClient();
+  if (!client) return null;
+  // `getUser()` re-validates the JWT against Supabase Auth (vs. `getSession`
+  // which trusts the locally-stored token). This is the recommended path
+  // for server-side auth checks per Supabase docs.
+  const { data, error } = await client.auth.getUser();
+  if (error) return null;
+  const email = data?.user?.email;
+  if (!email) return null;
+  return { email };
+};
+
+let activeReader: SessionReader = defaultSessionReader;
 
 export function _setSessionReaderForTests(reader: SessionReader): void {
   activeReader = reader;
 }
 export function _resetSessionReaderForTests(): void {
-  activeReader = closedSessionReader;
+  activeReader = defaultSessionReader;
 }
 
 export async function requireFounderSession(): Promise<FounderSession | null> {
