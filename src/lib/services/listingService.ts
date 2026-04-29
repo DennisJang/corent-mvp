@@ -20,13 +20,23 @@ type DraftFromInputArgs = {
   rawInput: string;
   fallbackCategory?: CategoryId;
   fallbackEstimatedValue?: number;
+  // When provided, the listing + verification ids and the safety code
+  // are derived deterministically from this seed. Used by the seller
+  // registration page's SSR initial state to avoid hydration mismatch
+  // between the server-rendered safety code and the client-rendered
+  // one. Reseed-omitted calls (e.g. user clicks "AI로 다시 추출") still
+  // generate fresh random ids.
+  idSeed?: string;
+  // The createdAt/updatedAt timestamps default to `nowIso()`. Tests and
+  // SSR seed the value to keep snapshots stable.
+  at?: string;
 };
 
 export type DraftListing = ListingIntent;
 
-function buildVerification(seedId: string): VerificationIntent {
+function buildVerification(seedId: string, idSeed?: string): VerificationIntent {
   return {
-    id: generateId("vi"),
+    id: idSeed ? `vi_${idSeed}` : generateId("vi"),
     safetyCode: generateListingSafetyCode(seedId),
     status: "pending",
     checks: { ...EMPTY_VERIFICATION_CHECKS },
@@ -39,10 +49,12 @@ export const listingService = {
     rawInput,
     fallbackCategory = "massage_gun",
     fallbackEstimatedValue = 200000,
+    idSeed,
+    at: providedAt,
   }: DraftFromInputArgs): DraftListing {
     const parsed = mockAIParser.parseSellerInput(rawInput);
-    const id = generateId("li");
-    const at = nowIso();
+    const id = idSeed ? `li_${idSeed}` : generateId("li");
+    const at = providedAt ?? nowIso();
     const estimatedValue = parsed.estimatedValue ?? fallbackEstimatedValue;
     const prices = calculateRecommendedPriceTable(estimatedValue);
     return {
@@ -63,7 +75,7 @@ export const listingService = {
         threeDays: prices["3d"],
         sevenDays: prices["7d"],
       },
-      verification: buildVerification(id),
+      verification: buildVerification(id, idSeed),
       createdAt: at,
       updatedAt: at,
     };

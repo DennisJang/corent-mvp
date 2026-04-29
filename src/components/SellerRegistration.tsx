@@ -39,14 +39,22 @@ const VERIFICATION_LABELS: Record<
   privateSerialStored: "비공개 시리얼 (선택)",
 };
 
+// Stable SSR seed for the initial draft. Both server and client compute
+// the same id, verification id, and safety code from this seed, so the
+// page hydrates without a mismatch warning. The user clicking "AI로
+// 다시 추출" still generates a fresh random id (no idSeed passed).
+const INITIAL_RAW_INPUT = "테라건 미니고 거의 안 썼어. 3일 정도 빌려주고 싶어.";
+const INITIAL_DRAFT_SEED = "demo_initial_seller_draft";
+const INITIAL_DRAFT_AT = "2026-04-30T00:00:00.000Z";
+
 export function SellerRegistration() {
-  const [rawInput, setRawInput] = useState(
-    "테라건 미니고 거의 안 썼어. 3일 정도 빌려주고 싶어.",
-  );
+  const [rawInput, setRawInput] = useState(INITIAL_RAW_INPUT);
   const [listing, setListing] = useState<ListingIntent | null>(() =>
     listingService.draftFromInput({
       sellerId: CURRENT_SELLER.id,
-      rawInput: "테라건 미니고 거의 안 썼어. 3일 정도 빌려주고 싶어.",
+      rawInput: INITIAL_RAW_INPUT,
+      idSeed: INITIAL_DRAFT_SEED,
+      at: INITIAL_DRAFT_AT,
     }),
   );
   const [submitting, setSubmitting] = useState(false);
