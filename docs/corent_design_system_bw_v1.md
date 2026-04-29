@@ -1,6 +1,39 @@
 # CoRent Design System BW v1
-
 _Last updated: 2026-04-29_
+## Reference Images
+
+The black-and-white visual system is grounded in five local reference images.
+
+These images are stored in:
+
+docs/references/
+
+Reference files:
+
+- 01-golden-ratio-grid.png
+
+- 02-celestial-orbit-diagram.png
+
+- 03-muller-brockmann-film.png
+
+- 04-muller-brockmann-grid-overlap.png
+
+- 05-helvetica-typography.png
+
+## Reference Mapping
+
+Use the five reference images only as visual anchors. Do not copy them literally and do not use them as decorative assets.
+
+| File | Role in CoRent |
+|---|---|
+| `docs/references/01-golden-ratio-grid.png` | Proportion, page structure, 7/5 and 6/6 layout splits |
+| `docs/references/02-celestial-orbit-diagram.png` | Sparse AI matching / trust flow diagrams using nodes, arcs, solid lines, and dashed lines |
+| `docs/references/03-muller-brockmann-film.png` | Strict Swiss poster grid, hierarchy through alignment, large type, and whitespace |
+| `docs/references/04-muller-brockmann-grid-overlap.png` | Typographic grid tension, controlled overlap, structure before expression |
+| `docs/references/05-helvetica-typography.png` | Helvetica-first black-and-white information design, neutral tone, type as interface |
+Implementation rule:
+
+The extracted principles in this document are the source of truth. The images are reference anchors only. Claude Code and Codex must not recreate the images directly, trace them, or introduce decorative graphics just because the references contain visual diagrams.
 
 ## 0. Purpose
 

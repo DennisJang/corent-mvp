@@ -1,3 +1,17 @@
+Always read these before major work:
+1. docs/corent_context_note.md
+2. docs/corent_design_system_bw_v1.md
+3. docs/corent_functional_mvp_intent_rules.md
+4. CLAUDE.md
+
+## Visual References
+
+The 5 visual reference images are stored in:
+
+```txt
+docs/references/
+
+
 # CLAUDE.md — CoRent MVP
 
 You are working on CoRent, a Seoul-based AI rental/sharing MVP.
