@@ -1,9 +1,10 @@
+// Display formatters. Keep formatting separate from domain math so the
+// pricing module stays pure and currency-agnostic.
+
 export function formatKRW(amount: number): string {
   return `₩${amount.toLocaleString("ko-KR")}`;
 }
 
-export const COMMISSION_RATE = 0.1;
-
-export function calculateSettlement(rentalFee: number): number {
-  return Math.round(rentalFee * (1 - COMMISSION_RATE));
-}
+// Existing call-sites still import these; delegate to the pricing module so
+// there is exactly one source of truth.
+export { COMMISSION_RATE, calculateSettlementAmount as calculateSettlement } from "@/lib/pricing";

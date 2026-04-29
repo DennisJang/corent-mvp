@@ -12,6 +12,9 @@ const eslintConfig = defineConfig([
     "out/**",
     "build/**",
     "next-env.d.ts",
+    // Pre-existing: a design doc was misnamed `docs/eslint.config.mjs` and
+    // must not be parsed by ESLint. Tracked in the implementation note.
+    "docs/**",
   ]),
 ]);
 

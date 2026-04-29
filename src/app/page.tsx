@@ -1,16 +1,8 @@
 import { PageShell } from "@/components/PageShell";
-import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { ProductCard } from "@/components/ProductCard";
+import { AISearchInput } from "@/components/AISearchInput";
 import { PRODUCTS } from "@/data/products";
-
-const SEARCH_CHIPS = [
-  "마사지건 3일",
-  "홈케어 기기",
-  "소형 운동기구",
-  "구매 전 체험",
-  "서울 직거래",
-];
 
 const TRUST_POINTS = [
   {
@@ -75,34 +67,7 @@ export default function LandingPage() {
             {/* Right 5 columns — AI search + orbital diagram */}
             <div className="col-span-12 md:col-span-5 flex flex-col gap-6">
               <OrbitDiagram />
-              <div className="bg-white border border-black">
-                <div className="border-b border-black px-5 py-3 flex items-baseline justify-between">
-                  <span className="text-caption">AI Search / Mock</span>
-                  <span className="text-caption text-[color:var(--ink-60)]">
-                    01
-                  </span>
-                </div>
-                <div className="px-5 py-6 flex flex-col gap-4">
-                  <span className="text-title">
-                    무엇을 며칠 써보고 싶나요?
-                  </span>
-                  <span className="text-small text-[color:var(--ink-60)]">
-                    자연어로 입력하면 카테고리·기간·지역을 자동으로 찾아드려요.
-                  </span>
-                  <div className="border-b border-dashed border-[color:var(--line-dashed)] pb-3 mt-2">
-                    <span className="text-body text-[color:var(--ink-40)]">
-                      예) 합정 근처에서 마사지건 3일만 써보고 싶어요
-                    </span>
-                  </div>
-                  <div className="flex flex-wrap gap-2 pt-2">
-                    {SEARCH_CHIPS.map((chip) => (
-                      <Badge key={chip} variant="dashed">
-                        {chip}
-                      </Badge>
-                    ))}
-                  </div>
-                </div>
-              </div>
+              <AISearchInput />
             </div>
           </div>
         </div>

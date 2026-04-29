@@ -1,54 +1,35 @@
-export type Category = "massage_gun" | "home_care" | "exercise";
+// Mock product fixtures. Re-exports types from the domain layer so existing
+// imports (`@/data/products`) keep working while the canonical types live
+// in `@/domain/*`.
+//
+// Prices are derived from `estimatedValue` via the canonical pricing
+// formula so the borrower-facing card price, the product detail page, the
+// listing recommendation, and any RentalIntent created from the product
+// can never disagree.
 
-export const CATEGORY_LABEL: Record<Category, string> = {
-  massage_gun: "마사지건",
-  home_care: "홈케어 기기",
-  exercise: "소형 운동기구",
-};
+export type { CategoryId as Category } from "@/domain/categories";
+export { CATEGORY_LABEL } from "@/domain/categories";
+export type { DurationKey } from "@/domain/durations";
+export { DURATIONS, DEFAULT_DURATION } from "@/domain/durations";
+export type { Product } from "@/domain/products";
 
-export type DurationKey = "1d" | "3d" | "7d";
+import type { Product } from "@/domain/products";
+import { calculateRecommendedPriceTable } from "@/lib/pricing";
 
-export const DURATIONS: { key: DurationKey; days: number; label: string }[] = [
-  { key: "1d", days: 1, label: "1일" },
-  { key: "3d", days: 3, label: "3일" },
-  { key: "7d", days: 7, label: "7일" },
-];
+type ProductSeed = Omit<Product, "prices">;
 
-export const DEFAULT_DURATION: DurationKey = "3d";
-
-export type Product = {
-  id: string;
-  name: string;
-  category: Category;
-  estimatedValue: number;
-  prices: Record<DurationKey, number>;
-  pickupArea: string;
-  condition: string;
-  components: string[];
-  defects: string;
-  sellerName: string;
-  sellerTrustNote: string;
-  trust: {
-    photoVerified: boolean;
-    safetyCode: string;
-    humanReviewed: boolean;
-    serialOnFile: boolean;
-  };
-  summary: string;
-  hero: { initials: string };
-};
-
-export const PRODUCTS: Product[] = [
+const PRODUCT_SEEDS: ProductSeed[] = [
   {
     id: "theragun-mini-2",
     name: "Theragun Mini 2세대",
     category: "massage_gun",
     estimatedValue: 280000,
-    prices: { "1d": 9800, "3d": 22400, "7d": 42000 },
     pickupArea: "서울 마포구 합정",
+    region: "seoul",
     condition: "사용감 적음",
     components: ["본체", "충전 케이블", "휴대용 파우치", "기본 헤드 1종"],
     defects: "외관 미세한 잔기스 1개. 작동 이상 없음.",
+    sellerId: "seller_jisu",
     sellerName: "지수",
     sellerTrustNote: "최근 30일 내 등록, 본인 확인 완료",
     trust: {
@@ -66,11 +47,12 @@ export const PRODUCTS: Product[] = [
     name: "Dyson Supersonic 헤어드라이어",
     category: "home_care",
     estimatedValue: 520000,
-    prices: { "1d": 18200, "3d": 41600, "7d": 78000 },
     pickupArea: "서울 강남구 역삼",
+    region: "seoul",
     condition: "거의 새것",
     components: ["본체", "스무딩 노즐", "스타일링 콘센트레이터", "디퓨저"],
     defects: "없음",
+    sellerId: "seller_minho",
     sellerName: "민호",
     sellerTrustNote: "리뷰 12건, 평균 응답 18분",
     trust: {
@@ -88,11 +70,12 @@ export const PRODUCTS: Product[] = [
     name: "스마트 저항밴드 세트",
     category: "exercise",
     estimatedValue: 110000,
-    prices: { "1d": 3900, "3d": 8800, "7d": 16500 },
     pickupArea: "서울 송파구 잠실",
+    region: "seoul",
     condition: "사용감 보통",
     components: ["저항밴드 3종", "도어 앵커", "운동 가이드"],
     defects: "고무 표면에 작은 마찰 자국. 강도 변화 없음.",
+    sellerId: "seller_sumin",
     sellerName: "수민",
     sellerTrustNote: "본인 확인 완료, 최근 7일 내 사진",
     trust: {
@@ -110,11 +93,12 @@ export const PRODUCTS: Product[] = [
     name: "Hyperice Hypervolt Go 2",
     category: "massage_gun",
     estimatedValue: 240000,
-    prices: { "1d": 8400, "3d": 19200, "7d": 36000 },
     pickupArea: "서울 성동구 성수",
+    region: "seoul",
     condition: "사용감 적음",
     components: ["본체", "충전 어댑터", "헤드 2종"],
     defects: "없음",
+    sellerId: "seller_gayeong",
     sellerName: "가영",
     sellerTrustNote: "리뷰 6건, 모든 거래 정상 반납",
     trust: {
@@ -132,11 +116,12 @@ export const PRODUCTS: Product[] = [
     name: "LG 스타일러 미니",
     category: "home_care",
     estimatedValue: 690000,
-    prices: { "1d": 24000, "3d": 55200, "7d": 103500 },
     pickupArea: "서울 용산구 한남",
+    region: "seoul",
     condition: "거의 새것",
     components: ["본체", "전용 옷걸이 2개"],
     defects: "없음",
+    sellerId: "seller_eunwoo",
     sellerName: "은우",
     sellerTrustNote: "1회 사용, 본인 확인 완료",
     trust: {
@@ -153,11 +138,12 @@ export const PRODUCTS: Product[] = [
     name: "컴팩트 로잉머신",
     category: "exercise",
     estimatedValue: 320000,
-    prices: { "1d": 11200, "3d": 25600, "7d": 48000 },
     pickupArea: "서울 영등포구 여의도",
+    region: "seoul",
     condition: "사용감 보통",
     components: ["본체", "사용 가이드"],
     defects: "프레임 도색 가벼운 벗겨짐. 작동 이상 없음.",
+    sellerId: "seller_dohyeon",
     sellerName: "도현",
     sellerTrustNote: "리뷰 4건",
     trust: {
@@ -171,6 +157,11 @@ export const PRODUCTS: Product[] = [
     hero: { initials: "CR" },
   },
 ];
+
+export const PRODUCTS: Product[] = PRODUCT_SEEDS.map((seed) => ({
+  ...seed,
+  prices: calculateRecommendedPriceTable(seed.estimatedValue),
+}));
 
 export function getProductById(id: string): Product | undefined {
   return PRODUCTS.find((p) => p.id === id);

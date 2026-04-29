@@ -1,5 +1,11 @@
 "use client";
 
+// Legacy reusable component preserved per CLAUDE.md's "Create reusable
+// components" list. The active product detail page (`ItemDetailClient`)
+// inlines a controlled duration grid because price + breakdown share the
+// same selection state. Kept here as an uncontrolled drop-in for any
+// future page that just needs the duration toggle.
+
 import { useState } from "react";
 import {
   DEFAULT_DURATION,
@@ -40,7 +46,7 @@ export function DurationSelector({ product }: DurationSelectorProps) {
               role="radio"
               aria-checked={isSelected}
               onClick={() => setSelected(d.key)}
-              className={`flex flex-col items-start gap-2 px-4 py-4 text-left transition-colors focus:outline-none focus-visible:outline focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2 ${borderL} ${
+              className={`flex flex-col items-start gap-2 px-4 py-4 text-left transition-colors focus:outline-none focus-visible:outline-2 focus-visible:outline-black focus-visible:outline-offset-2 ${borderL} ${
                 isSelected
                   ? "bg-black text-white"
                   : "bg-white text-black hover:bg-[color:var(--ink-08)]"

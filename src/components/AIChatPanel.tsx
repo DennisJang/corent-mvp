@@ -1,3 +1,9 @@
+// Legacy reusable component preserved per CLAUDE.md's "Create reusable
+// components" list. The active seller registration page
+// (`SellerRegistration`) inlines an equivalent structured-block AI panel
+// because it needs to bind to live ListingIntent state. Kept here as a
+// drop-in for any future page that just needs a static conversation log.
+
 type ConversationBlock =
   | { kind: "ai"; index: number; text: string }
   | { kind: "user"; text: string };
