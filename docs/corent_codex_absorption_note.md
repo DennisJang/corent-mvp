@@ -212,3 +212,83 @@ Tests now span: `rentalIntentMachine` (4) + `pricing` (6) + `format` (3)
    the rows incorrectly without breaking the math test. A small
    render-level check would close the loop.
 3. **No CI yet.** `npm test` runs locally; nothing enforces it on push.
+
+---
+
+# Round 3 — `codex/persistence-tests`
+
+_Reviewed: 2026-04-30_
+
+## Codex branch reviewed
+
+`codex/persistence-tests` — one commit on top of `main`:
+
+```
+02ce53a  Add persistence adapter test
+```
+
+Diff size: **1 file, +415 / −0**.
+
+| File | Type | Verdict |
+|---|---|---|
+| `src/lib/adapters/persistence/persistence.test.ts` | new — vitest suite | accepted as-is |
+
+No `package.json` / `package-lock.json` churn. Reuses the existing
+vitest setup from rounds 1–2.
+
+## Accepted changes
+
+1. **`src/lib/adapters/persistence/persistence.test.ts`** (15 cases across
+   3 `describe` blocks). Coverage:
+
+   - `MemoryPersistenceAdapter` — round-trip of all four MVP entities
+     plus `RentalEvent`s, save-overwrite (no duplicates), `delete` cascading
+     to event log, `clearAll` wipes everything.
+   - `LocalStoragePersistenceAdapter` — missing keys, corrupted JSON,
+     wrong-shape values (array where object expected) all degrade to
+     safe empty defaults; round-trip with rental events; save-overwrite;
+     `delete` cascade; `clearAll` only removes `corent:*` keys and leaves
+     unrelated localStorage keys intact.
+   - `getPersistence` — does not access `localStorage` at module import
+     time (uses a getter probe), falls back to `MemoryPersistenceAdapter`
+     when `window` is `undefined`, returns `LocalStoragePersistenceAdapter`
+     in browser-like environments, and caches the singleton across calls
+     within one module instance.
+
+   Tests use `vi.stubGlobal("window", ...)` + `vi.unstubAllGlobals()` +
+   `vi.resetModules()` per test — important because `getPersistence`
+   memoizes its choice in module scope. No new deps, no UI changes, no
+   adapter behavior changes.
+
+## Rejected changes
+
+Nothing. The branch is a pure test addition that exercises the existing
+adapter contract without reshaping it.
+
+## Bugs fixed
+
+None. All tests pass against the current adapter implementations on
+first run; no source changes were needed or made.
+
+## Test / lint / build commands run
+
+```
+npm run lint    →  0 errors, 0 warnings
+npm run build   →  13 routes static
+npm test        →  5 files, 31 tests passed (~167 ms)
+```
+
+Tests now span: `rentalIntentMachine` (4) + `pricing` (6) + `format` (3)
++ `durations` (2) + 1 misc-grouped case + persistence (15) =
+**31 cases / 5 files**.
+
+## Known remaining gaps
+
+1. **`dashboardService` and `mockAIParserAdapter` still untested.** Next
+   queued fallback tasks (`codex/dashboard-service-tests`,
+   `codex/mock-ai-parser-tests`) cover these.
+2. **Persistence tests are unit-level only.** They do not exercise the
+   real interaction between `getPersistence()` and the dashboard's
+   "로컬 데이터 비우기" UI affordance — that requires a render-level
+   check, out of scope for this card.
+3. **No CI yet.** Same gap as rounds 1–2.
