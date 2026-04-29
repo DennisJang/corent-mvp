@@ -179,6 +179,10 @@ export function createRentalIntent(
 // Happy-path transitions
 // --------------------------------------------------------------
 
+export function requestRentalIntent(intent: RentalIntent): TransitionResult {
+  return transition(intent, "requested", {}, "rental_requested", "borrower");
+}
+
 export function approveRentalIntent(intent: RentalIntent): TransitionResult {
   return transition(intent, "seller_approved", {}, "seller_approved", "seller");
 }
