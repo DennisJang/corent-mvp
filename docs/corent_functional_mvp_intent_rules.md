@@ -2,6 +2,8 @@
 
 _Last updated: 2026-04-29_
 
+> **Direction v2 alignment notice (2026-04-30):** the fee model and region statements in this document have been aligned inline with [`corent_product_direction_v2.md`](corent_product_direction_v2.md), [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md), and [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md). **Where this document conflicts with the v2 documents, the v2 documents win.** The state-machine, adapter, and pure-function rules in this document remain authoritative for implementation; only the fee/region framing was outdated.
+
 ## 0. Purpose
 
 This document defines the implementation rules for moving CoRent from a static visual MVP into a functional MVP.
@@ -28,7 +30,7 @@ But the code must be structured so those can be connected later with minimal cha
 
 # 1. Non-Negotiable Product Context
 
-CoRent is a Seoul-based AI rental/sharing MVP.
+CoRent is a Korea-wide AI rental/sharing MVP. (Seoul is a demo/test region only — see [`corent_product_direction_v2.md` §2](corent_product_direction_v2.md).)
 
 It helps people:
 
@@ -51,7 +53,7 @@ Initial MVP categories:
 
 Initial region:
 
-- Seoul beta
+- Korea-wide direction. Seoul is a demo/test assumption only. See [`corent_product_direction_v2.md` §2](corent_product_direction_v2.md).
 
 Rental durations:
 
@@ -65,9 +67,9 @@ Rental method:
 - Payment still happens inside the platform
 - Do not design around cash or in-person payment
 
-Commission:
+Fee model:
 
-- 10% of rental fee
+- Pre-revenue beta: no fee is collected. Future target: 3% of rental fee + fixed transaction fee (TBD), positioned as platform / safe-transaction infrastructure. See [`corent_product_direction_v2.md` §1](corent_product_direction_v2.md), [`corent_legal_trust_architecture_note.md` §1](corent_legal_trust_architecture_note.md), and [`corent_pre_revenue_beta_plan.md` §1](corent_pre_revenue_beta_plan.md).
 
 Trust model:
 
@@ -577,7 +579,7 @@ Rules:
 - 1 day: about 3.5% of product value
 - 3 days: about 8% of product value
 - 7 days: about 15% of product value
-- platform fee: 10% of rental fee
+- platform fee: target 3% of rental fee + fixed transaction fee (TBD); not collected during the pre-revenue beta window. See [`corent_product_direction_v2.md` §1](corent_product_direction_v2.md).
 
 Safety deposit:
 

@@ -1,16 +1,21 @@
 # CLAUDE.md — CoRent MVP
 
-You are working on CoRent, a Seoul-based AI rental/sharing MVP.
+You are working on CoRent, a Korea-wide AI rental/sharing MVP. Seoul is a demo/test region only and is **not** a product constraint — the canonical reference is [`docs/corent_product_direction_v2.md`](docs/corent_product_direction_v2.md).
 
 ## Required Reading Before Major Work
 
-Read these in order, every time you start non-trivial work:
+Read these in order, every time you start non-trivial work. **The Direction v2 documents (1–5) win on conflict over the older context/intent-rule documents (7–9).**
 
-1. `docs/corent_context_note.md` — product context
-2. `docs/corent_design_system_bw_v1.md` — current visual system (BW Swiss Grid)
-3. `docs/corent_functional_mvp_intent_rules.md` — Intent-model implementation rules
-4. `docs/agent_loop.md` — Claude ↔ Codex workflow and approval gates
-5. `CLAUDE.md` (this file)
+1. `docs/corent_product_direction_v2.md` — current product direction (fee, geography, design maturity, flow-first principle)
+2. `docs/corent_legal_trust_architecture_note.md` — legal/trust architecture (C2C marketplace, no wallet, partner-mediated payment, regulated-language ban)
+3. `docs/corent_pre_revenue_beta_plan.md` — pre-revenue posture, runtime modes / feature flags, beta validation metrics
+4. `docs/corent_security_gate_note.md` — security review gate before any DB / auth / payment / file-upload / location work
+5. `docs/corent_defensibility_note.md` — disclosure boundaries and defensible assets
+6. `docs/agent_loop.md` — Claude ↔ Codex workflow and approval gates
+7. `docs/corent_context_note.md` — original product context (older 10% / Seoul-beta framing; superseded inline by Direction v2)
+8. `docs/corent_design_system_bw_v1.md` — current visual system (BW Swiss Grid); see also "Design Maturity" below
+9. `docs/corent_functional_mvp_intent_rules.md` — Intent-model implementation rules (older 10% / Seoul-beta framing; superseded inline by Direction v2)
+10. `CLAUDE.md` (this file)
 
 The **previous blue-based design (v0) has been retired**. Any document still referring to a blue palette or to `docs/corent_mvp_design_system_v0.md` is out of date and must not be followed. The single source of truth for visuals is `docs/corent_design_system_bw_v1.md`.
 
@@ -60,7 +65,7 @@ Initial categories:
 
 Initial region:
 
-- Seoul beta
+- **Korea-wide product direction.** Seoul is a demo/test assumption, not a product constraint. Seed/demo data may still include Seoul examples. See [`docs/corent_product_direction_v2.md`](docs/corent_product_direction_v2.md) §2 and [`docs/corent_legal_trust_architecture_note.md`](docs/corent_legal_trust_architecture_note.md) §5.
 
 Rental method:
 
@@ -76,13 +81,14 @@ Rental durations:
 
 Payment:
 
-- Toss Payments-ready architecture
-- Placeholder/mock payment only for now
-- No real Toss integration yet
+- Toss Payments-ready architecture (interfaces only). `mockPaymentAdapter` is the only path during the pre-revenue beta window.
+- Real PG / Toss integration is gated behind partner contract and a security review per [`docs/corent_security_gate_note.md`](docs/corent_security_gate_note.md). See also [`docs/corent_legal_trust_architecture_note.md`](docs/corent_legal_trust_architecture_note.md) §3 and [`docs/corent_pre_revenue_beta_plan.md`](docs/corent_pre_revenue_beta_plan.md) §1.
 
-Commission:
+Fee model:
 
-- 10% of rental fee
+- **Pre-revenue beta:** no fee is collected, displayed as charged, or executed. Future pricing model may appear only as **planned / under review**, never as an active charge.
+- **Future target (post-2026-07-13 + readiness):** 3% of rental fee + fixed transaction fee (TBD). Positioned as platform / safe-transaction infrastructure, not marketplace rake.
+- Sources of truth: [`docs/corent_product_direction_v2.md`](docs/corent_product_direction_v2.md) §1, [`docs/corent_legal_trust_architecture_note.md`](docs/corent_legal_trust_architecture_note.md) §1, [`docs/corent_pre_revenue_beta_plan.md`](docs/corent_pre_revenue_beta_plan.md) §1.
 
 Trust model:
 
@@ -92,6 +98,30 @@ Trust model:
 - Private serial number storage
 - Buyer safety deposit
 - Delayed settlement after return confirmation
+
+## Pre-Revenue Beta Posture
+
+CoRent operates in a **pre-revenue validation window** until **2026-07-13** AND explicit legal/payment/business readiness approval. During this window:
+
+- No platform fee, no payment integration, no deposit collection, no settlement/payout, no CoRent wallet, no ad monetization, no subscription, no active paid-brokerage language.
+- One `main` codebase. Beta vs. launch behavior is gated by named runtime modes / feature flags (`PRE_REVENUE_BETA`, `LAUNCH_READY`, `ENABLE_PAYMENTS`, `ENABLE_DEPOSITS`, `ENABLE_FEES`, `ENABLE_REAL_DB`, `ENABLE_LOCATION_MATCHING`, `ENABLE_PARTNER_PROTECTION`). Flags are documented but **not yet implemented in code** — implementation requires a separate approved PR.
+- Full posture, metrics list, and flag table: [`docs/corent_pre_revenue_beta_plan.md`](docs/corent_pre_revenue_beta_plan.md).
+
+## Security Gate
+
+Real DB, real auth/session, real payment, real file/photo upload, location-based matching, and partner-protection wiring **all require a security review to be cleared first** as a docs-only readiness note. Do not start any of those without it. Full gate: [`docs/corent_security_gate_note.md`](docs/corent_security_gate_note.md).
+
+## Legal / Trust Framing
+
+CoRent is a **C2C rental marketplace and transaction-state / trust-workflow layer**, not the direct rental counterparty. No CoRent wallet. Money movement (payment, deposit hold/release, refunds, settlement) flows through a **licensed PG / payment partner** once integrated. Avoid regulated language ("insurance", "premium", "coverage", "claim payout") unless a licensed partner is contracted and legally reviewed. Full posture: [`docs/corent_legal_trust_architecture_note.md`](docs/corent_legal_trust_architecture_note.md).
+
+## Design Maturity & Flow-First
+
+The current BW Swiss Grid UI is a **demoable, rule-based foundation — not the final polished UI**. Do not treat current screens as final. Future visual work is **flow-first**: start from the user's rental intent and lender operating preferences, identify annoying/complex steps, abstract what the system can absorb, leave the user with only essential decisions, and then design the UI around the simplified flow. The visual-system change approval gate from `docs/agent_loop.md` still applies — "foundation, not final" is not a license to drift design tokens. See [`docs/corent_product_direction_v2.md`](docs/corent_product_direction_v2.md) §3 and §4.
+
+## Defensibility
+
+Public beta exposes only the high-level concept and basic mechanics. Do not publish category rankings, demand/supply conversion, price sensitivity, partner pipeline, or detailed trust/fee logic. Lead partner conversations with **validated demand data**, not the raw idea. Full posture: [`docs/corent_defensibility_note.md`](docs/corent_defensibility_note.md).
 
 ## Design System — BW Swiss Grid (v1)
 
@@ -190,15 +220,19 @@ Reusable components already in the repo (extend these — don't fork):
 - `intent/RentalIntentTimeline`, `intent/IntentStatusBadge`
 - `pricing/PriceBreakdown`
 
-Use mock data first. Do not add:
+Use mock data first. Each of the following is gated by the [security review](docs/corent_security_gate_note.md) and explicit user approval — do not start any of them without both:
 
-- real auth
+- real auth / session
 - real database
-- real payment
-- real file upload backend
+- real payment integration
+- real file / photo upload
 - real AI API call
 - real admin console
-- insurance
+- location-based matching / GPS
+
+Out of scope for MVP and not on the near-term roadmap:
+
+- insurance / underwriting (regulated language banned per [legal/trust note §4](docs/corent_legal_trust_architecture_note.md))
 - delivery logistics
 - full dispute automation
 
@@ -251,8 +285,6 @@ After editing:
 
 ## Current Milestone
 
-Milestone 1 — functional Intent MVP on the BW Swiss Grid system.
+**Milestone 1 — DONE.** Functional Intent MVP on the BW Swiss Grid system is browser-demoable as of 2026-04-30 (see [`docs/corent_mvp_v1_completion_note.md`](docs/corent_mvp_v1_completion_note.md)).
 
-Goal:
-
-Make CoRent feel like a real, trustworthy, premium product using mock data only, with the Intent model wired end-to-end (search → listing → rental request → state transitions → dashboard) on the black-and-white Swiss grid.
+**Next milestone — flow mapping + DB readiness audit (docs-only).** No DB, payment, auth, upload, or location integration starts until the relevant docs-only audit and security review notes exist and are explicitly approved. The pre-revenue beta posture in [`docs/corent_pre_revenue_beta_plan.md`](docs/corent_pre_revenue_beta_plan.md) holds throughout, and the visual system stays on the BW foundation until a flow-mapped redesign is approved.

@@ -2,6 +2,8 @@
 
 _Last updated: 2026-04-29_
 
+> **Direction v2 alignment notice (2026-04-30):** the fee model, region, and pre-revenue posture sections in this note are partially aligned inline with [`corent_product_direction_v2.md`](corent_product_direction_v2.md), [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md), and [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md). **Where this note conflicts with the v2 documents, the v2 documents win.** Specific lines have been corrected below; older paragraphs may still describe the original framing for historical context.
+
 ## 0. Purpose
 
 This note preserves the full product context behind CoRent so future work does not lose the original intent.
@@ -177,9 +179,9 @@ The first MVP should answer:
 
 ## 5.1 Initial Region
 
-> **Seoul beta**
+> **Korea-wide product direction. Seoul is a demo/test assumption, not a product constraint.**
 
-The real first operation can still be limited to specific Seoul neighborhoods, but the product currently frames itself as Seoul-based.
+The real first operation may still launch in specific Seoul neighborhoods for logistical reasons, and seed/demo data may continue to use Seoul examples. The earlier "Seoul beta" framing as a product constraint is **superseded** — see [`corent_product_direction_v2.md` §2](corent_product_direction_v2.md) and [`corent_legal_trust_architecture_note.md` §5](corent_legal_trust_architecture_note.md). Location-based matching / GPS is gated on a location-information compliance review and is not in MVP scope.
 
 ## 5.2 Initial Categories
 
@@ -268,15 +270,15 @@ The product can label this as:
 
 But the seller decides the final price.
 
-## 5.6 Commission
+## 5.6 Fee Model
 
-Platform commission:
+> _Updated 2026-04-30: the previous "10% of rental fee" framing is **superseded** by Direction v2._
 
-> **10% of rental fee**
+**Pre-revenue beta (until 2026-07-13 + readiness):** no fee is collected, displayed as charged, or executed. See [`corent_pre_revenue_beta_plan.md` §1](corent_pre_revenue_beta_plan.md).
 
-Seller-facing copy:
+**Future target:** 3% of rental fee + fixed transaction fee (TBD). Positioned as platform / safe-transaction infrastructure, not marketplace rake. See [`corent_product_direction_v2.md` §1](corent_product_direction_v2.md) and [`corent_legal_trust_architecture_note.md` §1](corent_legal_trust_architecture_note.md).
 
-> 대여가 끝나고 반납이 확인되면, 수수료 10%를 제외한 금액이 정산돼요.
+Lender-facing copy guidance is in the legal/trust note §1. Do **not** use "수수료 10%" or any rake-style language. Acceptable phrases include "서비스 이용료", "안전거래 수수료", "거래 보호 수수료", "platform service fee", "safe-transaction fee".
 
 ## 5.7 Payment
 
@@ -516,7 +518,7 @@ The MVP is currently limited to 5 routes/screens.
 Purpose:
 
 - communicate the main idea
-- introduce CoRent as Seoul beta
+- introduce CoRent as a Korea-wide pre-revenue beta (see `corent_pre_revenue_beta_plan.md`; Seoul is demo data only, not a product constraint)
 - show purchase-before-use positioning
 - provide AI search entry
 - show the trust/matching diagram language
@@ -524,7 +526,7 @@ Purpose:
 Core content:
 
 - headline: 사기 전에, 며칠만 살아보기.
-- supporting copy for Seoul-based short-term rental
+- supporting copy framing CoRent as a Korea-wide short-term rental product (Seoul examples in seed data are illustrative only)
 - primary CTA: 며칠 써볼 물건 찾기
 - secondary CTA: 내 물건 빌려주기
 - AI search/orbit module
@@ -1160,4 +1162,4 @@ Use Claude Code to maintain structure and correctness.
 
 # 16. Short One-Paragraph Context
 
-CoRent is a Seoul-based AI rental/sharing MVP that lets people borrow products before buying them and lets owners turn idle products into short-term rental income. The first MVP focuses only on massage guns, home-care devices, and small exercise equipment, with 1-day, 3-day, and 7-day rentals, direct pickup/return, platform-based Toss Payments-ready payment, 10% commission, delayed settlement after return, today’s safety code photo, private serial number storage, AI first check, and human final review. The product should feel like a black-and-white Swiss editorial trust system: Helvetica, strict grid, line-based hierarchy, mathematical proportion, generous whitespace, no color, no gradients, and no noisy marketplace styling.
+CoRent is a Korea-wide AI rental/sharing MVP that lets people borrow products before buying them and lets owners turn idle products into short-term rental income. The first MVP focuses only on massage guns, home-care devices, and small exercise equipment, with 1-day, 3-day, and 7-day rentals, direct pickup/return, and a Toss Payments-ready architecture wired only behind a `mockPaymentAdapter` during the pre-revenue beta window (see `corent_pre_revenue_beta_plan.md`). Today's safety code photo, private serial number storage, AI first check, and human final review remain part of the trust model; settlement happens after return confirmation. The product should feel like a black-and-white Swiss editorial trust system: Helvetica, strict grid, line-based hierarchy, mathematical proportion, generous whitespace, no color, no gradients, and no noisy marketplace styling — but the current UI is a demoable foundation only, with a flow-first redesign queued (`corent_product_direction_v2.md`). The fee model targets 3% + fixed transaction fee post-launch (`corent_legal_trust_architecture_note.md`); no fee is collected during pre-revenue beta. Seoul examples in seed data are illustrative only — the product direction is Korea-wide.
