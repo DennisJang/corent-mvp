@@ -41,5 +41,25 @@ Date:
 - pricing policy changes
 - domain model changes
 - visual system changes
+- production deploy
+- main merge
+- PR approval
 
+## Safe Scheduled Tasks
+
+- [ ] codex/dashboard-service-tests
+  - status: ready
+  - can_schedule_run: yes
+  - can_merge_without_user: no
+  - task_card: docs/codex_tasks/dashboard-service-tests.md
+  - expected_branch: codex/dashboard-service-tests
+  - max_scope: tests_only
+
+- [ ] codex/mock-ai-parser-tests
+  - status: queued
+  - can_schedule_run: yes
+  - can_merge_without_user: no
+  - task_card: docs/codex_tasks/mock-ai-parser-tests.md
+  - expected_branch: codex/mock-ai-parser-tests
+  - max_scope: tests_only
 ## Done Today
