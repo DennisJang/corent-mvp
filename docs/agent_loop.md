@@ -60,6 +60,26 @@ If user approval is required and the user does not respond within **20 minutes**
 
 These can run on `codex/*` branches without user approval, but they still cannot be merged without user approval.
 
+## Scheduled / End-of-Session Reports
+
+Long-running scheduled tasks and end-of-session handoffs write a short
+report to `docs/scheduled_runs/`. The format and the step-by-step
+prompt for a scheduled run live in:
+
+- `docs/scheduled_runs/_template.md` — report shape (task selected,
+  branch created, files changed, commands run, blocked items,
+  confirmation that no merge / PR approval / deployment / external
+  integration / pricing / domain-model / visual-system change was
+  performed).
+- `docs/scheduled_runs/schedule_prompt_template.md` — the prompt that
+  drives a single safe scheduled task.
+
+Scheduled tasks must come from the `Safe Scheduled Tasks` section of
+`docs/today_queue.md` (where `can_schedule_run: yes` and
+`can_merge_without_user: no`). They follow the same approval-gate and
+no-response-fallback rules as the standard loop above — scheduled
+execution never lifts those gates.
+
 ## Forbidden Autonomous Actions
 
 Neither Claude nor Codex may:
