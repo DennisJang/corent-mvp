@@ -13,6 +13,9 @@
 import { notFound } from "next/navigation";
 import { requireFounderSession } from "@/server/admin/auth";
 import { readDashboardSummary } from "@/server/admin/dashboard-data";
+import { readSupabaseServerEnv } from "@/server/analytics/env";
+import { getBackendMode } from "@/server/backend/mode";
+import { readMarketplaceAggregates } from "@/server/persistence/supabase";
 
 export const runtime = "nodejs";
 export const preferredRegion = ["icn1"];
@@ -23,6 +26,16 @@ export default async function FounderAdminDashboardPage() {
   if (!session) notFound();
 
   const summary = await readDashboardSummary();
+  // Phase 2 dev-only: marketplace aggregates. Returns null in production
+  // and when the backend mode is "mock" (the default) — the panel just
+  // disappears so the Phase 1 admin surface is unchanged.
+  const backendMode = getBackendMode();
+  const phase2EnvReady = readSupabaseServerEnv().ok;
+  const phase2Available =
+    process.env.NODE_ENV !== "production" && backendMode === "supabase" && phase2EnvReady;
+  const marketplaceAggregates = phase2Available
+    ? await readMarketplaceAggregates()
+    : null;
 
   if (!summary) {
     return (
@@ -79,6 +92,62 @@ export default async function FounderAdminDashboardPage() {
           Sanitizer rejections (24h): {summary.rejections24h}
         </span>
       </section>
+
+      {marketplaceAggregates ? (
+        <section className="mt-16 border-t border-black pt-8">
+          <header className="flex items-baseline justify-between border-b border-[color:var(--ink-12)] pb-3 mb-6">
+            <span className="text-caption">Phase 2 / Marketplace (dev)</span>
+            <span className="text-caption text-[color:var(--ink-60)]">
+              backend={backendMode}
+            </span>
+          </header>
+          <div className="grid grid-cols-1 md:grid-cols-5 border-l border-[color:var(--ink-12)]">
+            <Tile label="Listings" value={marketplaceAggregates.listings.total} />
+            <Tile
+              label="Rental intents"
+              value={marketplaceAggregates.rentalIntents.total}
+            />
+            <Tile
+              label="Rental events"
+              value={marketplaceAggregates.rentalEvents.total}
+            />
+            <Tile
+              label="Admin reviews"
+              value={marketplaceAggregates.adminReviews.total}
+            />
+            <Tile
+              label="Profiles"
+              value={marketplaceAggregates.profiles.total}
+            />
+          </div>
+
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-y-12 mt-12">
+            <Section
+              title="Listings by status"
+              rows={Object.entries(marketplaceAggregates.listings.byStatus).map(
+                ([label, count]) => ({ label, count }),
+              )}
+            />
+            <Section
+              title="Rental intents by status"
+              rows={Object.entries(
+                marketplaceAggregates.rentalIntents.byStatus,
+              ).map(([label, count]) => ({ label, count }))}
+            />
+            <Section
+              title="Admin reviews by status"
+              rows={Object.entries(
+                marketplaceAggregates.adminReviews.byStatus,
+              ).map(([label, count]) => ({ label, count }))}
+            />
+          </div>
+
+          <p className="text-caption text-[color:var(--ink-60)] mt-12">
+            Aggregate counts only; no row-level data is read here. Phase 2
+            schema is dev-only and never reachable from production.
+          </p>
+        </section>
+      ) : null}
     </main>
   );
 }

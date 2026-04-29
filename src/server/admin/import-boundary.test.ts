@@ -117,6 +117,62 @@ describe("NEXT_PUBLIC_* deny-list (security review §3.20)", () => {
   });
 });
 
+describe("Phase 2 marketplace persistence boundary", () => {
+  it("@/server/persistence/supabase is never imported from src/components/**", () => {
+    const offenders: string[] = [];
+    for (const f of ALL_FILES) {
+      const rel = relative(SRC_ROOT, f);
+      if (!rel.startsWith("components/")) continue;
+      const src = readRel(f);
+      if (
+        src.includes("@/server/persistence/supabase") ||
+        src.includes("@/server/backend/")
+      ) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("@/server/persistence/supabase modules never reference SUPABASE_ANON_KEY directly", () => {
+    // Marketplace repos must use the service-role server env reader. They
+    // must never reach for the anon key (which is the founder-auth-only
+    // path).
+    const targets = [
+      join(SRC_ROOT, "server", "persistence", "supabase", "client.ts"),
+      join(SRC_ROOT, "server", "persistence", "supabase", "listingRepository.ts"),
+      join(SRC_ROOT, "server", "persistence", "supabase", "rentalIntentRepository.ts"),
+      join(SRC_ROOT, "server", "persistence", "supabase", "adminReviewRepository.ts"),
+      join(SRC_ROOT, "server", "persistence", "supabase", "marketplaceAggregates.ts"),
+    ];
+    for (const file of targets) {
+      const src = readRel(file);
+      expect(src).not.toContain("SUPABASE_ANON_KEY");
+      expect(src).not.toContain("readSupabaseAuthEnv");
+    }
+  });
+
+  it("backend mode module never references service-role / anon env vars", () => {
+    const file = join(SRC_ROOT, "server", "backend", "mode.ts");
+    const src = readRel(file);
+    expect(src).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+    expect(src).not.toContain("SUPABASE_ANON_KEY");
+    expect(src).not.toContain("SUPABASE_URL");
+    // It only reads CORENT_BACKEND_MODE and NODE_ENV.
+    expect(src).toContain("CORENT_BACKEND_MODE");
+  });
+
+  it("Phase 2 dev DB-health route stays under src/app/admin/ behind the founder gate", () => {
+    const file = join(SRC_ROOT, "app", "admin", "dev", "db-health", "route.ts");
+    const src = readRel(file);
+    expect(src).toContain("requireFounderSession");
+    // Hard prod gate present.
+    expect(src).toContain('NODE_ENV === "production"');
+    // No env values are echoed.
+    expect(src).not.toMatch(/process\.env\.SUPABASE_SERVICE_ROLE_KEY/);
+  });
+});
+
 describe("Server-only logger boundary", () => {
   it("admin auth route handlers do not use console.* directly", () => {
     const targets = [
