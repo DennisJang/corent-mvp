@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { RentalIntentStatus } from "@/domain/intents";
 import {
+  APPROVAL_COPY,
   CLAIM_WINDOW_COPY,
   HANDOFF_RITUAL_COPY,
   LISTING_CARD_COPY,
@@ -107,6 +108,28 @@ describe("HANDOFF_RITUAL_COPY + CLAIM_WINDOW_COPY", () => {
       ...Object.values(CLAIM_WINDOW_COPY),
     ].join(" ");
     for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+  });
+});
+
+describe("APPROVAL_COPY", () => {
+  it("contains the documented strings", () => {
+    expect(APPROVAL_COPY.notChargedYet).toBe("아직 결제되지 않았어요.");
+    expect(APPROVAL_COPY.awaitingSellerApproval).toBe(
+      "소유자가 대여 가능 여부를 확인하면 다음 단계로 진행됩니다.",
+    );
+    expect(APPROVAL_COPY.approveSuccess).toBe("대여 요청을 승인했어요.");
+    expect(APPROVAL_COPY.declineSuccess).toBe("대여 요청을 거절했어요.");
+  });
+
+  it("avoids forbidden regulated-language and payment-implementation claims", () => {
+    const all = Object.values(APPROVAL_COPY).join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+    // No claim of integration with a real PG / payment provider.
+    for (const t of ["토스페이먼츠", "stripe", "kakaopay", "payco"]) {
       expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
     }
   });

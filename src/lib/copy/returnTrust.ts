@@ -83,6 +83,28 @@ export function getReturnTrustStatusCopy(status: RentalIntentStatus): string {
 }
 
 // --------------------------------------------------------------
+// APPROVAL_COPY — borrower- and seller-facing strings around the
+// "seller approval before payment" flow. Avoids any payment language
+// because real payment is not implemented yet.
+// --------------------------------------------------------------
+
+export const APPROVAL_COPY = {
+  // Item detail / request-confirmed surface — borrower view.
+  notChargedYet: "아직 결제되지 않았어요.",
+  awaitingSellerApproval:
+    "소유자가 대여 가능 여부를 확인하면 다음 단계로 진행됩니다.",
+  paymentNotImplementedYet:
+    "결제는 아직 구현되지 않았어요. 소유자 승인 이후 단계는 별도로 안내됩니다.",
+
+  // Seller dashboard — toast-style confirmations.
+  approveSuccess: "대여 요청을 승인했어요.",
+  declineSuccess: "대여 요청을 거절했어요.",
+
+  // Generic surface label.
+  approvalRequired: "요청 후 대여 가능 여부를 확인해요.",
+} as const;
+
+// --------------------------------------------------------------
 // HANDOFF_RITUAL_COPY — short labels for the future Return Ritual
 // checklist. Surfaces are not built yet; the strings live here so the
 // next PR can wire them in without a separate copy review.

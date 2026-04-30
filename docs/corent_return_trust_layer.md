@@ -160,13 +160,59 @@ What **may** appear in deeper surfaces (item detail, booking flow):
 
 ## 4. Phase scope
 
-### Phase 1 — THIS PR
+### Phase 1 — foundation (already shipped)
 
 - Doc + types + copy. No state machine change. No UI redesign.
 - Demote rental price visual weight on `ProductCard`. Add three
   small copy lines (try-before-buy, condition check, approval hint).
 - Document how the conceptual lifecycle maps onto the existing
   19-state `RentalIntent` machine (see [§5](#5-mapping-to-existing-state-machine)).
+
+### Phase 1.1 — Seller Approval Before Payment (THIS PR)
+
+The first real implementation step of the trust layer. After this PR:
+
+- A rental request lands in the existing `requested` status (no
+  change). Borrowers cannot proceed past it without seller action.
+- Seller approves via the new `rentalService.approveRequest(intent,
+  actorUserId)` → moves to `seller_approved`.
+- Seller declines via the new `rentalService.declineRequest(intent,
+  actorUserId, reason?)` → moves to `seller_cancelled` (the
+  documented mapping for `seller_declined` per [§5](#5-mapping-to-existing-state-machine)).
+- Borrower self-cancels via the new
+  `rentalService.cancelByBorrower(intent, actorUserId)` →
+  `borrower_cancelled`.
+- Each of the three new methods runs `assertRentalSellerIs` /
+  `assertRentalBorrowerIs` from
+  [`src/lib/auth/guards.ts`](../src/lib/auth/guards.ts) **before** the
+  state machine transition. A foreign actor receives `OwnershipError`
+  with a typed `code` and the persistence layer is never written.
+- The seller dashboard's existing approve/decline buttons now route
+  through the actor-aware methods, with `getMockSellerSession()` as
+  the `actorUserId`. The mock-session boundary is the documented
+  migration site for real auth.
+- The legacy `rentalService.approve(intent)` and
+  `rentalService.cancel(intent, by)` remain for back-compat. New code
+  must use the actor-aware variants.
+- Item detail page replaces the premature
+  `결제는 요청 승인 후 토스페이먼츠로 진행됩니다` line with the
+  shared `APPROVAL_COPY.notChargedYet` +
+  `APPROVAL_COPY.awaitingSellerApproval` +
+  `APPROVAL_COPY.paymentNotImplementedYet` strings — no PG name, no
+  payment-implementation claim, no regulated language.
+
+What is **still not implemented** after this PR:
+
+- No payment integration. No money moves.
+- No deposit, no soft hold, no escrow, no settlement payout.
+- No upload / photo evidence pipeline (boolean flags only on the
+  existing verification record).
+- No dispute automation, no admin write surface.
+- No seller storefront.
+- No real per-user authentication. The dashboard still resolves the
+  mock seller via `getMockSellerSession()`. Real auth replaces this
+  helper without changing `approveRequest` / `declineRequest` /
+  `cancelByBorrower` signatures — they already take `actorUserId`.
 
 ### Phase 2 — later PR (gated by review)
 

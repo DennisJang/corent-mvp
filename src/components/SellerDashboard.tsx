@@ -16,9 +16,12 @@ import { isFailureStatus } from "@/domain/intents";
 import { CURRENT_SELLER } from "@/data/mockSellers";
 import { MOCK_RENTAL_INTENTS } from "@/data/mockRentalIntents";
 import { LISTED_ITEMS, type ListedItem } from "@/data/dashboard";
+import { OwnershipError } from "@/lib/auth/guards";
+import { getMockSellerSession } from "@/lib/auth/mockSession";
 import { getPersistence } from "@/lib/adapters/persistence";
 import { rentalService } from "@/lib/services/rentalService";
 import { listingService } from "@/lib/services/listingService";
+import { APPROVAL_COPY } from "@/lib/copy/returnTrust";
 import {
   activeRentalRows,
   deriveDashboardSummary,
@@ -33,6 +36,12 @@ export function SellerDashboard() {
   const [listings, setListings] = useState<ListingIntent[]>([]);
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
+
+  // Mock-only session. Real per-user authentication is documented in
+  // docs/mvp_security_guardrails.md §1; this constant is the migration
+  // site that becomes a server-resolved session id.
+  const session = getMockSellerSession();
 
   const refresh = async () => {
     const r = await rentalService.list();
@@ -103,9 +112,20 @@ export function SellerDashboard() {
 
   const handleApprove = async (intent: RentalIntent) => {
     setBusyId(intent.id);
+    setToast(null);
     try {
-      await rentalService.approve(intent);
+      await rentalService.approveRequest(intent, session.sellerId);
       await refresh();
+      setToast(APPROVAL_COPY.approveSuccess);
+    } catch (e) {
+      // OwnershipError = the actor is not the rental's seller. Don't
+      // leak the rental id to the user; the developer message is
+      // sufficient for the dashboard's failure surface.
+      setToast(
+        e instanceof OwnershipError
+          ? "이 요청에 대한 권한이 없어요."
+          : "요청을 처리하지 못했어요.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -113,9 +133,17 @@ export function SellerDashboard() {
 
   const handleDeclineSeller = async (intent: RentalIntent) => {
     setBusyId(intent.id);
+    setToast(null);
     try {
-      await rentalService.cancel(intent, "seller");
+      await rentalService.declineRequest(intent, session.sellerId);
       await refresh();
+      setToast(APPROVAL_COPY.declineSuccess);
+    } catch (e) {
+      setToast(
+        e instanceof OwnershipError
+          ? "이 요청에 대한 권한이 없어요."
+          : "요청을 처리하지 못했어요.",
+      );
     } finally {
       setBusyId(null);
     }
@@ -247,7 +275,7 @@ export function SellerDashboard() {
       <section className="border-b border-black">
         <div className="container-dashboard py-16">
           <div className="grid-12 gap-y-12 items-start">
-            <div className="col-span-12 md:col-span-7">
+            <div className="col-span-12 md:col-span-7 flex flex-col gap-3">
               <PendingBlock
                 rows={pending}
                 busyId={busyId}
@@ -255,6 +283,15 @@ export function SellerDashboard() {
                 onDecline={handleDeclineSeller}
                 showRelativeTime={loaded}
               />
+              {toast ? (
+                <span
+                  role="status"
+                  aria-live="polite"
+                  className="text-small text-[color:var(--ink-60)] border border-dashed border-[color:var(--line-dashed)] px-3 py-2"
+                >
+                  {toast}
+                </span>
+              ) : null}
             </div>
             <div className="col-span-12 md:col-span-5">
               <ActiveBlock

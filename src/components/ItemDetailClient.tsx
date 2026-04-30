@@ -19,6 +19,7 @@ import {
 } from "@/domain/durations";
 import type { RentalIntent } from "@/domain/intents";
 import type { Product } from "@/domain/products";
+import { APPROVAL_COPY } from "@/lib/copy/returnTrust";
 import { formatKRW } from "@/lib/format";
 import { calculateRentalAmounts } from "@/lib/pricing";
 import { rentalService } from "@/lib/services/rentalService";
@@ -167,7 +168,8 @@ export function ItemDetailClient({ product }: Props) {
                         {formatKRW(intent.amounts.borrowerTotal)}
                       </span>
                       <span className="text-small text-[color:var(--ink-60)]">
-                        판매자가 승인하면 결제 단계로 이어져요.
+                        {APPROVAL_COPY.notChargedYet}{" "}
+                        {APPROVAL_COPY.awaitingSellerApproval}
                       </span>
                     </div>
                   ) : (
@@ -183,7 +185,7 @@ export function ItemDetailClient({ product }: Props) {
                     <span className="text-small">{error}</span>
                   ) : (
                     <span className="text-small text-[color:var(--ink-60)] text-center">
-                      결제는 요청 승인 후 토스페이먼츠로 진행됩니다 (모의).
+                      {APPROVAL_COPY.paymentNotImplementedYet}
                     </span>
                   )}
                 </div>
