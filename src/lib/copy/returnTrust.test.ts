@@ -1,0 +1,113 @@
+import { describe, expect, it } from "vitest";
+import type { RentalIntentStatus } from "@/domain/intents";
+import {
+  CLAIM_WINDOW_COPY,
+  HANDOFF_RITUAL_COPY,
+  LISTING_CARD_COPY,
+  formatFromOneDayPrice,
+  formatPriceBreakdown,
+  getReturnTrustStatusCopy,
+} from "./returnTrust";
+
+const ALL_STATUSES: RentalIntentStatus[] = [
+  "draft",
+  "requested",
+  "seller_approved",
+  "payment_pending",
+  "paid",
+  "pickup_confirmed",
+  "return_pending",
+  "return_confirmed",
+  "settlement_ready",
+  "settled",
+  "cancelled",
+  "payment_failed",
+  "seller_cancelled",
+  "borrower_cancelled",
+  "pickup_missed",
+  "return_overdue",
+  "damage_reported",
+  "dispute_opened",
+  "settlement_blocked",
+];
+
+// All forbidden tokens collected in one place so any drift across the
+// copy module surfaces in a single test failure.
+const FORBIDDEN_TOKENS = [
+  "보험",
+  "보장",
+  "보상",
+  "안전거래",
+  "에스크로",
+  "무조건 보호",
+  "insurance",
+  "guarantee",
+  "coverage",
+  "claim payout",
+  "fully refunded",
+  "fraud protection",
+];
+
+describe("getReturnTrustStatusCopy", () => {
+  it("returns a non-empty string for every RentalIntentStatus", () => {
+    for (const s of ALL_STATUSES) {
+      const copy = getReturnTrustStatusCopy(s);
+      expect(typeof copy).toBe("string");
+      expect(copy.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("never uses forbidden regulated-language tokens for any status", () => {
+    for (const s of ALL_STATUSES) {
+      const copy = getReturnTrustStatusCopy(s);
+      for (const t of FORBIDDEN_TOKENS) {
+        expect(copy.toLowerCase().includes(t.toLowerCase())).toBe(false);
+      }
+    }
+  });
+});
+
+describe("LISTING_CARD_COPY", () => {
+  it("contains the documented strings", () => {
+    expect(LISTING_CARD_COPY.tryBeforeBuy).toBe("사기 전 며칠만 써보기");
+    expect(LISTING_CARD_COPY.conditionCheck).toBe("픽업·반납 상태 확인");
+    expect(LISTING_CARD_COPY.approvalRequired).toBe("요청 후 대여 가능 여부 확인");
+  });
+
+  it("avoids forbidden tokens", () => {
+    const all = Object.values(LISTING_CARD_COPY).join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+  });
+});
+
+describe("formatFromOneDayPrice", () => {
+  it("formats '1일 ₩8,000부터' shape", () => {
+    expect(formatFromOneDayPrice(8000)).toBe("1일 ₩8,000부터");
+  });
+  it("uses ko-KR thousand separators", () => {
+    expect(formatFromOneDayPrice(1234567)).toBe("1일 ₩1,234,567부터");
+  });
+});
+
+describe("formatPriceBreakdown", () => {
+  it("renders both durations side by side", () => {
+    expect(
+      formatPriceBreakdown({ threeDays: 21000, sevenDays: 39000 }),
+    ).toBe("3일 ₩21,000 · 7일 ₩39,000");
+  });
+});
+
+describe("HANDOFF_RITUAL_COPY + CLAIM_WINDOW_COPY", () => {
+  it("uses safe process-language and avoids forbidden tokens", () => {
+    const all = [
+      ...Object.values(HANDOFF_RITUAL_COPY.pickup),
+      ...Object.values(HANDOFF_RITUAL_COPY.return),
+      ...Object.values(CLAIM_WINDOW_COPY),
+    ].join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+  });
+});
