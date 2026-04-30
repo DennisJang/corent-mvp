@@ -9,6 +9,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import type { PersistenceAdapter } from "./types";
 
 const KEYS = {
@@ -16,7 +17,13 @@ const KEYS = {
   listingIntents: "corent:listingIntents",
   searchIntents: "corent:searchIntents",
   rentalEvents: "corent:rentalEvents",
+  handoffRecords: "corent:handoffRecords",
 } as const;
+
+// Composite key inside the handoff blob: `${rentalIntentId}:${phase}`.
+function handoffKey(rentalIntentId: string, phase: HandoffPhase): string {
+  return `${rentalIntentId}:${phase}`;
+}
 
 // Read + parse + shape-check. If the stored value doesn't match the shape
 // of `fallback` (record vs array vs primitive), the fallback is returned
@@ -120,6 +127,27 @@ export class LocalStoragePersistenceAdapter implements PersistenceAdapter {
   async listRentalEvents(rentalIntentId: string): Promise<RentalEvent[]> {
     const all = readJson<Record<string, RentalEvent[]>>(KEYS.rentalEvents, {});
     return all[rentalIntentId] ?? [];
+  }
+
+  async saveHandoffRecord(record: HandoffRecord): Promise<void> {
+    const all = readJson<Record<string, HandoffRecord>>(KEYS.handoffRecords, {});
+    all[handoffKey(record.rentalIntentId, record.phase)] = record;
+    writeJson(KEYS.handoffRecords, all);
+  }
+  async getHandoffRecord(
+    rentalIntentId: string,
+    phase: HandoffPhase,
+  ): Promise<HandoffRecord | null> {
+    const all = readJson<Record<string, HandoffRecord>>(KEYS.handoffRecords, {});
+    return all[handoffKey(rentalIntentId, phase)] ?? null;
+  }
+  async listHandoffRecordsForRental(
+    rentalIntentId: string,
+  ): Promise<HandoffRecord[]> {
+    const all = readJson<Record<string, HandoffRecord>>(KEYS.handoffRecords, {});
+    return Object.values(all).filter(
+      (r) => r.rentalIntentId === rentalIntentId,
+    );
   }
 
   async clearAll(): Promise<void> {

@@ -313,6 +313,117 @@ session, and have the rental-create flow attach the resolved
 borrower id at request time. No changes to `handoffService` are
 required when that happens — it already takes `actorUserId`.
 
+### Phase 1.3 — Handoff Persistence + Minimal Seller Dashboard Surface + TrustEvent Basics (THIS PR)
+
+After this PR the handoff record is persisted, the seller dashboard
+shows a compact handoff surface for real (localStorage-persisted)
+rentals, and the typed TrustEvent factory exists for future surfaces
+to call.
+
+**What is now implemented:**
+
+- **Handoff persistence** in
+  [`src/lib/adapters/persistence/types.ts`](../src/lib/adapters/persistence/types.ts)
+  + both adapters (memory + localStorage). Three new methods on the
+  `PersistenceAdapter` interface:
+  - `saveHandoffRecord(record)` — upsert by `(rentalIntentId, phase)`.
+  - `getHandoffRecord(rentalIntentId, phase)` — null when missing.
+  - `listHandoffRecordsForRental(rentalIntentId)` — both phases for one rental.
+  - `clearAll()` now wipes the new `corent:handoffRecords` key alongside
+    the existing CoRent keys; unrelated localStorage keys are still
+    preserved.
+- **Orchestration on `rentalService`** in
+  [`src/lib/services/rentalService.ts`](../src/lib/services/rentalService.ts):
+  - `rentalService.getHandoffRecord(rentalIntentId, phase)` and
+    `rentalService.listHandoffRecords(rentalIntentId)` — read passthroughs.
+  - `rentalService.recordSellerHandoff(rentalIntentId, phase, actorUserId, patch?, confirm?)`
+    — loads the rental + existing record (or creates a fresh one),
+    runs `handoffService.confirmAsSeller` (which calls
+    `assertRentalSellerIs` BEFORE building the new record), and
+    persists the result. Throws `Error("rental_not_found")` when the
+    rental id is unknown, `OwnershipError` on actor mismatch, and
+    `HandoffInputError` on bounded-shape violations. The pure
+    `handoffService` from Phase 1.2 is unchanged — orchestration is
+    additive.
+- **TrustEvent factory** in
+  [`src/lib/services/trustEvents.ts`](../src/lib/services/trustEvents.ts):
+  `createTrustEvent({ rentalIntentId, type, actor, handoffPhase?,
+  evidenceRefs?, notes?, at? })` returns a typed `TrustEvent`. Validates
+  every field: known type / actor / phase enums, bounded `notes`,
+  array-of-strings `evidenceRefs`. **No persistence, no service
+  integration.** Surfaces that want to emit a trust event today
+  construct one and discard it; a future PR adds persistence and
+  wires it into the handoff orchestrator + admin surfaces.
+- **Seller dashboard surface** in
+  [`src/components/SellerDashboard.tsx`](../src/components/SellerDashboard.tsx):
+  a new compact `HandoffBlock` section appears between the active /
+  pending block and the failure block whenever the seller has
+  real-persistence rentals at status `paid`, `pickup_confirmed`,
+  `return_pending`, or `return_confirmed`. Each row shows:
+  - product name + borrower name + duration,
+  - the phase intro (`픽업 때 상태를 함께 확인해요.` /
+    `반납 때 구성품과 작동 여부를 다시 확인해요.`),
+  - the 5 checklist labels rendered as inline pills,
+  - a progress label (`픽업 체크 N/5` or `반납 체크 N/5`),
+  - a single `판매자 확인` button. Clicking it calls
+    `rentalService.recordSellerHandoff` with all five checks set to
+    true and `confirmedBySeller=true`, then refreshes the dashboard.
+    Once seller-confirmed, the button switches to `판매자 확인 완료`
+    and is disabled.
+  Above the row list, three muted captions are always visible:
+  `사진 업로드는 아직 구현되지 않았어요.`,
+  `메모나 링크로 상태 기록을 남길 수 있어요.`, and
+  `대여자 확인은 실제 로그인 이후 연결됩니다.`
+  The block does NOT render when the dashboard is in mock-fallback
+  mode — those rentals aren't persisted and the orchestrator would
+  reject the click with `rental_not_found`.
+- **Shared copy** in
+  [`src/lib/copy/returnTrust.ts`](../src/lib/copy/returnTrust.ts):
+  `HANDOFF_RITUAL_COPY` extended with `dashboardSectionTitle`,
+  `sellerConfirmAction`, `sellerConfirmDone`, `borrowerLater`. New
+  `formatHandoffProgress(phase, done, total?)` helper renders the
+  `픽업 체크 3/5` shape. Copy tests scan every new string against
+  the regulated-language deny-list.
+
+**Mapping to the existing `RentalIntent` state machine:**
+
+`rentalIntentMachine.ts` is unchanged. The handoff record remains a
+**sibling concept** to the rental status — the dashboard surface uses
+`handoffPhaseForStatus(status)` to decide whether to render a row, but
+the machine itself is untouched. Marking the handoff seller-side
+complete does NOT advance the rental status; the existing
+`다음 단계 진행 →` button on the active block continues to do that
+through the `confirmPickup` / `startReturn` / `confirmReturn` service
+methods. Linking handoff completion to status advancement is a
+deliberate Phase 2 decision.
+
+**What is intentionally NOT implemented:**
+
+- **No upload, no media storage, no file picker.** The
+  `manualEvidenceUrl` slot on `HandoffRecord` accepts a bounded URL,
+  but the dashboard does not yet expose an input for it.
+- **No per-item checklist editor.** The dashboard ships the
+  one-button "판매자 확인" action; toggling individual checks is
+  Phase 2.
+- **No borrower-side handoff confirmation.** `confirmAsBorrower`
+  exists and is tested, but the dashboard cannot exercise it without
+  real auth attaching a borrower id at request creation. The static
+  `대여자 확인은 실제 로그인 이후 연결됩니다.` caption records the
+  gap on the surface.
+- **No automatic damage judgment.** Mismatch routing is Phase 3.
+- **No claim window timer.** `ClaimWindow` types still exist; the
+  timer is Phase 3.
+- **No TrustEvent persistence.** Factory only. The handoff
+  orchestrator does not yet emit a trust event when a seller-side
+  handoff completes.
+- **No payment, no deposit, no soft hold, no escrow, no settlement
+  payout, no insurance / guarantee / coverage language.**
+- **No seller storefront.** Still Phase 3.
+- **No real per-user authentication.** The dashboard still resolves
+  the mock seller via `getMockSellerSession()`.
+- **No state machine changes.** `rentalIntentMachine.ts` is untouched.
+- **No new dependencies.**
+
 ### Phase 2 — later PR (gated by review)
 
 - Wire the Return Ritual checklist into the rental flow (pickup

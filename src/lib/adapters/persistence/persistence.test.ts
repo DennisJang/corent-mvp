@@ -6,6 +6,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { HandoffRecord } from "@/domain/trust";
 import { LocalStoragePersistenceAdapter } from "@/lib/adapters/persistence/localStorageAdapter";
 import { MemoryPersistenceAdapter } from "@/lib/adapters/persistence/memoryAdapter";
 import type { PersistenceAdapter } from "@/lib/adapters/persistence/types";
@@ -109,6 +110,41 @@ const baseRentalEvent: RentalEvent = {
   metadata: {
     source: "test",
   },
+};
+
+const basePickupHandoff: HandoffRecord = {
+  id: "ho_pickup_test",
+  rentalIntentId: baseRentalIntent.id,
+  phase: "pickup",
+  checks: {
+    mainUnit: true,
+    components: true,
+    working: true,
+    appearance: true,
+    preexisting: true,
+  },
+  confirmedBySeller: true,
+  confirmedByBorrower: false,
+  note: "외관 양호, 흠집 1건 기록",
+  createdAt: "2026-04-29T00:02:00.000Z",
+  updatedAt: "2026-04-29T00:02:00.000Z",
+};
+
+const baseReturnHandoff: HandoffRecord = {
+  id: "ho_return_test",
+  rentalIntentId: baseRentalIntent.id,
+  phase: "return",
+  checks: {
+    mainUnit: false,
+    components: false,
+    working: false,
+    appearance: false,
+    preexisting: false,
+  },
+  confirmedBySeller: false,
+  confirmedByBorrower: false,
+  createdAt: "2026-04-29T00:03:00.000Z",
+  updatedAt: "2026-04-29T00:03:00.000Z",
 };
 
 function makeRentalIntent(overrides: Partial<RentalIntent> = {}): RentalIntent {
@@ -231,6 +267,7 @@ describe("MemoryPersistenceAdapter", () => {
     const adapter = new MemoryPersistenceAdapter();
 
     await expectAdapterSupportsMvpEntities(adapter);
+    await adapter.saveHandoffRecord(basePickupHandoff);
     await adapter.clearAll();
 
     expect(await adapter.listRentalIntents()).toEqual([]);
@@ -238,6 +275,52 @@ describe("MemoryPersistenceAdapter", () => {
     expect(await adapter.listSearchIntents()).toEqual([]);
     expect(await adapter.getLatestSearchIntent()).toBeNull();
     expect(await adapter.listRentalEvents(baseRentalIntent.id)).toEqual([]);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toBeNull();
+  });
+
+  it("saves, reads, lists, and updates handoff records by (rental, phase)", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toBeNull();
+
+    await adapter.saveHandoffRecord(basePickupHandoff);
+    await adapter.saveHandoffRecord(baseReturnHandoff);
+
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toEqual(basePickupHandoff);
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "return"),
+    ).toEqual(baseReturnHandoff);
+
+    const both = await adapter.listHandoffRecordsForRental(
+      baseRentalIntent.id,
+    );
+    expect(both).toHaveLength(2);
+    expect(both).toEqual(
+      expect.arrayContaining([basePickupHandoff, baseReturnHandoff]),
+    );
+
+    // Re-saving the same (rental, phase) overwrites instead of duplicating.
+    const updated: HandoffRecord = {
+      ...basePickupHandoff,
+      confirmedByBorrower: true,
+      updatedAt: "2026-04-29T00:10:00.000Z",
+    };
+    await adapter.saveHandoffRecord(updated);
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toEqual(updated);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toHaveLength(2);
   });
 });
 
@@ -338,6 +421,9 @@ describe("LocalStoragePersistenceAdapter", () => {
       "corent:rentalEvents": JSON.stringify({
         [baseRentalIntent.id]: [baseRentalEvent],
       }),
+      "corent:handoffRecords": JSON.stringify({
+        [`${baseRentalIntent.id}:pickup`]: basePickupHandoff,
+      }),
       unrelated: "keep me",
     });
     const adapter = new LocalStoragePersistenceAdapter();
@@ -349,6 +435,53 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(await adapter.listListingIntents()).toEqual([]);
     expect(await adapter.listSearchIntents()).toEqual([]);
     expect(await adapter.listRentalEvents(baseRentalIntent.id)).toEqual([]);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toBeNull();
+  });
+
+  it("saves and reads handoff records keyed by (rental, phase)", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toBeNull();
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+
+    await adapter.saveHandoffRecord(basePickupHandoff);
+    await adapter.saveHandoffRecord(baseReturnHandoff);
+
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
+    ).toEqual(basePickupHandoff);
+    expect(
+      await adapter.getHandoffRecord(baseRentalIntent.id, "return"),
+    ).toEqual(baseReturnHandoff);
+
+    const both = await adapter.listHandoffRecordsForRental(
+      baseRentalIntent.id,
+    );
+    expect(both).toHaveLength(2);
+
+    // (rental, other-rental) records are scoped per id.
+    const otherRecord: HandoffRecord = {
+      ...basePickupHandoff,
+      id: "ho_other",
+      rentalIntentId: "ri_other",
+    };
+    await adapter.saveHandoffRecord(otherRecord);
+    expect(
+      await adapter.listHandoffRecordsForRental("ri_other"),
+    ).toEqual([otherRecord]);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toHaveLength(2);
   });
 });
 

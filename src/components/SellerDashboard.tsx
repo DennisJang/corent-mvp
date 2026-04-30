@@ -13,15 +13,21 @@ import { SellerDashboardStat } from "@/components/SellerDashboardStat";
 import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatusBadge";
 import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
+import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import { CURRENT_SELLER } from "@/data/mockSellers";
 import { MOCK_RENTAL_INTENTS } from "@/data/mockRentalIntents";
 import { LISTED_ITEMS, type ListedItem } from "@/data/dashboard";
 import { OwnershipError } from "@/lib/auth/guards";
 import { getMockSellerSession } from "@/lib/auth/mockSession";
 import { getPersistence } from "@/lib/adapters/persistence";
+import { handoffService } from "@/lib/services/handoffService";
 import { rentalService } from "@/lib/services/rentalService";
 import { listingService } from "@/lib/services/listingService";
-import { APPROVAL_COPY } from "@/lib/copy/returnTrust";
+import {
+  APPROVAL_COPY,
+  HANDOFF_RITUAL_COPY,
+  formatHandoffProgress,
+} from "@/lib/copy/returnTrust";
 import {
   activeRentalRows,
   deriveDashboardSummary,
@@ -31,9 +37,29 @@ import {
 } from "@/lib/services/dashboardService";
 import { formatKRW } from "@/lib/format";
 
+// Maps a rental status to the natural handoff phase. Returns `null`
+// for statuses outside the handoff window. Phase 1.3 surfaces show
+// pickup checks while a paid rental hasn't been picked up, and return
+// checks while a return is pending.
+function handoffPhaseForStatus(
+  status: RentalIntent["status"],
+): HandoffPhase | null {
+  if (status === "paid" || status === "pickup_confirmed") return "pickup";
+  if (status === "return_pending" || status === "return_confirmed")
+    return "return";
+  return null;
+}
+
+function handoffMapKey(rentalIntentId: string, phase: HandoffPhase): string {
+  return `${rentalIntentId}:${phase}`;
+}
+
 export function SellerDashboard() {
   const [rentals, setRentals] = useState<RentalIntent[]>([]);
   const [listings, setListings] = useState<ListingIntent[]>([]);
+  const [handoffByKey, setHandoffByKey] = useState<Map<string, HandoffRecord>>(
+    () => new Map(),
+  );
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -48,6 +74,18 @@ export function SellerDashboard() {
     const l = await listingService.list();
     setRentals(r);
     setListings(l);
+    // Load handoff records for every handoff-eligible rental owned by
+    // this seller. The Map is keyed by `${rentalIntentId}:${phase}` so
+    // surface code can look up O(1) per row.
+    const next = new Map<string, HandoffRecord>();
+    for (const rental of r) {
+      if (rental.sellerId !== CURRENT_SELLER.id) continue;
+      const phase = handoffPhaseForStatus(rental.status);
+      if (!phase) continue;
+      const rec = await rentalService.getHandoffRecord(rental.id, phase);
+      if (rec) next.set(handoffMapKey(rental.id, phase), rec);
+    }
+    setHandoffByKey(next);
   };
 
   // Read persisted state once on mount. Effect-setState is intentional —
@@ -96,6 +134,28 @@ export function SellerDashboard() {
     [effectiveRentals],
   );
 
+  // Handoff rows derive from the seller's REAL rentals only — the
+  // mock fallback set is not persisted, so rendering an interactive
+  // "판매자 확인" button against it would 404 inside
+  // `recordSellerHandoff` (the rental id wouldn't be in storage).
+  const handoffRows = useMemo(() => {
+    const rows: Array<{
+      intent: RentalIntent;
+      phase: HandoffPhase;
+      record: HandoffRecord | null;
+    }> = [];
+    for (const rental of myRentals) {
+      const phase = handoffPhaseForStatus(rental.status);
+      if (!phase) continue;
+      rows.push({
+        intent: rental,
+        phase,
+        record: handoffByKey.get(handoffMapKey(rental.id, phase)) ?? null,
+      });
+    }
+    return rows;
+  }, [myRentals, handoffByKey]);
+
   const seedMockData = async () => {
     const store = getPersistence();
     // Mock IDs are stable, so re-seeding overwrites instead of duplicating.
@@ -143,6 +203,52 @@ export function SellerDashboard() {
         e instanceof OwnershipError
           ? "이 요청에 대한 권한이 없어요."
           : "요청을 처리하지 못했어요.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  // Compact "one button confirms all five" pickup/return action. The
+  // patch sets every checklist item to true and the orchestrator
+  // flips `confirmedBySeller`. A future PR can replace this with a
+  // per-item editor; the data shape already supports both.
+  const handleSellerHandoff = async (
+    intent: RentalIntent,
+    phase: HandoffPhase,
+  ) => {
+    setBusyId(intent.id);
+    setToast(null);
+    try {
+      const next = await rentalService.recordSellerHandoff(
+        intent.id,
+        phase,
+        session.sellerId,
+        {
+          checks: {
+            mainUnit: true,
+            components: true,
+            working: true,
+            appearance: true,
+            preexisting: true,
+          },
+        },
+      );
+      setHandoffByKey((prev) => {
+        const m = new Map(prev);
+        m.set(handoffMapKey(intent.id, phase), next);
+        return m;
+      });
+      setToast(
+        phase === "pickup"
+          ? "픽업 체크를 기록했어요."
+          : "반납 체크를 기록했어요.",
+      );
+    } catch (e) {
+      setToast(
+        e instanceof OwnershipError
+          ? "이 요청에 대한 권한이 없어요."
+          : "체크 기록을 저장하지 못했어요.",
       );
     } finally {
       setBusyId(null);
@@ -303,6 +409,18 @@ export function SellerDashboard() {
           </div>
         </div>
       </section>
+
+      {handoffRows.length > 0 ? (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-16">
+            <HandoffBlock
+              rows={handoffRows}
+              busyId={busyId}
+              onConfirm={handleSellerHandoff}
+            />
+          </div>
+        </section>
+      ) : null}
 
       {failures.length > 0 ? (
         <section className="border-b border-black">
@@ -502,6 +620,97 @@ function ActiveBlock({
           ))}
         </ul>
       )}
+    </section>
+  );
+}
+
+function HandoffBlock({
+  rows,
+  busyId,
+  onConfirm,
+}: {
+  rows: Array<{
+    intent: RentalIntent;
+    phase: HandoffPhase;
+    record: HandoffRecord | null;
+  }>;
+  busyId: string | null;
+  onConfirm: (intent: RentalIntent, phase: HandoffPhase) => void;
+}) {
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <h3 className="text-title">{HANDOFF_RITUAL_COPY.dashboardSectionTitle}</h3>
+        <Badge variant="dashed">{rows.length}건</Badge>
+      </header>
+      <div className="px-6 pt-4 pb-2 flex flex-col gap-1">
+        <span className="text-small text-[color:var(--ink-60)]">
+          {HANDOFF_RITUAL_COPY.noUploadYet}
+        </span>
+        <span className="text-small text-[color:var(--ink-60)]">
+          {HANDOFF_RITUAL_COPY.manualNoteHint}
+        </span>
+        <span className="text-small text-[color:var(--ink-60)]">
+          {HANDOFF_RITUAL_COPY.borrowerLater}
+        </span>
+      </div>
+      <ul className="flex flex-col">
+        {rows.map((row, i) => {
+          const done = row.record
+            ? handoffService.completedCount(row.record)
+            : 0;
+          const sellerDone = row.record?.confirmedBySeller === true;
+          const intro =
+            row.phase === "pickup"
+              ? HANDOFF_RITUAL_COPY.pickup.intro
+              : HANDOFF_RITUAL_COPY.return.intro;
+          return (
+            <li
+              key={`${row.intent.id}:${row.phase}`}
+              className={`grid grid-cols-[1fr_auto] gap-6 px-6 py-5 items-start ${
+                i !== rows.length - 1
+                  ? "border-t border-[color:var(--ink-12)]"
+                  : "border-t border-[color:var(--ink-12)]"
+              }`}
+            >
+              <div className="flex flex-col gap-1">
+                <span className="text-body font-medium">
+                  {row.intent.productName}
+                </span>
+                <span className="text-small text-[color:var(--ink-60)]">
+                  {row.intent.borrowerName ?? "익명"} · {row.intent.durationDays}일
+                </span>
+                <span className="text-small text-[color:var(--ink-60)]">
+                  {intro}
+                </span>
+                <ul className="flex flex-wrap gap-x-3 gap-y-1 text-caption text-[color:var(--ink-60)] mt-1">
+                  <li>{HANDOFF_RITUAL_COPY.checklist.mainUnit}</li>
+                  <li>{HANDOFF_RITUAL_COPY.checklist.components}</li>
+                  <li>{HANDOFF_RITUAL_COPY.checklist.working}</li>
+                  <li>{HANDOFF_RITUAL_COPY.checklist.appearance}</li>
+                  <li>{HANDOFF_RITUAL_COPY.checklist.preexisting}</li>
+                </ul>
+              </div>
+              <div className="flex flex-col items-end gap-2">
+                <span className="text-caption text-[color:var(--ink-60)] tabular-nums">
+                  {formatHandoffProgress(row.phase, done)}
+                </span>
+                <Button
+                  size="md"
+                  variant={sellerDone ? "secondary" : undefined}
+                  onClick={() => onConfirm(row.intent, row.phase)}
+                  disabled={sellerDone || busyId === row.intent.id}
+                  type="button"
+                >
+                  {sellerDone
+                    ? HANDOFF_RITUAL_COPY.sellerConfirmDone
+                    : HANDOFF_RITUAL_COPY.sellerConfirmAction}
+                </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
     </section>
   );
 }

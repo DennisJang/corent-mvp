@@ -138,7 +138,23 @@ export const HANDOFF_RITUAL_COPY = {
   manualNoteHint: "메모나 링크로 상태 기록을 남길 수 있어요.",
   conditionStatus: "상태 확인",
   returnConfirmed: "반납 확인",
+  // Phase 1.3 dashboard surface.
+  dashboardSectionTitle: "픽업·반납 체크",
+  sellerConfirmAction: "판매자 확인",
+  sellerConfirmDone: "판매자 확인 완료",
+  borrowerLater: "대여자 확인은 실제 로그인 이후 연결됩니다.",
 } as const;
+
+// "픽업 체크 3/5" / "반납 체크 5/5" — small progress label for the
+// dashboard surface.
+export function formatHandoffProgress(
+  phase: "pickup" | "return",
+  done: number,
+  total = 5,
+): string {
+  const label = phase === "pickup" ? "픽업 체크" : "반납 체크";
+  return `${label} ${done}/${total}`;
+}
 
 // --------------------------------------------------------------
 // CLAIM_WINDOW_COPY — short labels for the post-return inspection

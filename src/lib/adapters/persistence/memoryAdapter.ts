@@ -7,13 +7,22 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import type { PersistenceAdapter } from "./types";
+
+// Composite key for handoff records: `${rentalIntentId}:${phase}`. The
+// pair is the natural primary key — at most one record per phase per
+// rental — and a flat Map keeps the memory adapter readable.
+function handoffKey(rentalIntentId: string, phase: HandoffPhase): string {
+  return `${rentalIntentId}:${phase}`;
+}
 
 export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected rentalIntents = new Map<string, RentalIntent>();
   protected listingIntents = new Map<string, ListingIntent>();
   protected searchIntents: SearchIntent[] = [];
   protected rentalEvents = new Map<string, RentalEvent[]>();
+  protected handoffRecords = new Map<string, HandoffRecord>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
     this.rentalIntents.set(intent.id, intent);
@@ -59,10 +68,30 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     return [...(this.rentalEvents.get(rentalIntentId) ?? [])];
   }
 
+  async saveHandoffRecord(record: HandoffRecord): Promise<void> {
+    this.handoffRecords.set(handoffKey(record.rentalIntentId, record.phase), record);
+  }
+  async getHandoffRecord(
+    rentalIntentId: string,
+    phase: HandoffPhase,
+  ): Promise<HandoffRecord | null> {
+    return this.handoffRecords.get(handoffKey(rentalIntentId, phase)) ?? null;
+  }
+  async listHandoffRecordsForRental(
+    rentalIntentId: string,
+  ): Promise<HandoffRecord[]> {
+    const out: HandoffRecord[] = [];
+    for (const r of this.handoffRecords.values()) {
+      if (r.rentalIntentId === rentalIntentId) out.push(r);
+    }
+    return out;
+  }
+
   async clearAll(): Promise<void> {
     this.rentalIntents.clear();
     this.listingIntents.clear();
     this.searchIntents = [];
     this.rentalEvents.clear();
+    this.handoffRecords.clear();
   }
 }

@@ -16,12 +16,18 @@
 //   docs/corent_return_trust_layer.md §10 for migration rules.
 
 import type { RentalIntent } from "@/domain/intents";
+import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import {
   assertRentalBorrowerIs,
   assertRentalSellerIs,
 } from "@/lib/auth/guards";
 import { getPersistence } from "@/lib/adapters/persistence";
 import { mockPaymentAdapter } from "@/lib/adapters/payment/mockPaymentAdapter";
+import {
+  type HandoffPatch,
+  createHandoffRecord,
+  handoffService,
+} from "@/lib/services/handoffService";
 import {
   approveRentalIntent,
   blockSettlement,
@@ -127,6 +133,62 @@ export const rentalService = {
     const r = cancelRentalIntent(intent, "borrower");
     if (!r.ok) throw new Error(`invalid_transition: ${r.message}`);
     return persistAndEmit(r);
+  },
+
+  // Reads the handoff record for a (rental, phase). Returns null when
+  // no record exists yet — the caller decides whether to render an
+  // empty checklist or skip the row.
+  async getHandoffRecord(
+    rentalIntentId: string,
+    phase: HandoffPhase,
+  ): Promise<HandoffRecord | null> {
+    return getPersistence().getHandoffRecord(rentalIntentId, phase);
+  },
+
+  // Lists every handoff record for a rental (both phases). Useful for
+  // the seller dashboard's compact handoff surface.
+  async listHandoffRecords(
+    rentalIntentId: string,
+  ): Promise<HandoffRecord[]> {
+    return getPersistence().listHandoffRecordsForRental(rentalIntentId);
+  },
+
+  // Seller-side handoff write path. Loads the rental and the existing
+  // record (or creates a fresh one), runs handoffService.confirmAsSeller
+  // — which calls assertRentalSellerIs BEFORE building the new record —
+  // and persists the result. Returns the persisted record.
+  //
+  // Throws:
+  //   - Error("rental_not_found") when the rental id has no persisted intent.
+  //   - OwnershipError when actorUserId is not the rental's seller.
+  //   - HandoffInputError on bounded-shape violations (note, url, checks).
+  //
+  // The seller dashboard's compact "판매자 확인" action calls this with
+  // `{ checks: { mainUnit:true, components:true, working:true,
+  //   appearance:true, preexisting:true } }` and the default `confirm=true`.
+  async recordSellerHandoff(
+    rentalIntentId: string,
+    phase: HandoffPhase,
+    actorUserId: string,
+    patch: HandoffPatch = {},
+    confirm = true,
+  ): Promise<HandoffRecord> {
+    const intent = await getPersistence().getRentalIntent(rentalIntentId);
+    if (!intent) throw new Error("rental_not_found");
+    const existing = await getPersistence().getHandoffRecord(
+      rentalIntentId,
+      phase,
+    );
+    const record = existing ?? createHandoffRecord(rentalIntentId, phase);
+    const next = handoffService.confirmAsSeller(
+      intent,
+      record,
+      actorUserId,
+      patch,
+      confirm,
+    );
+    await getPersistence().saveHandoffRecord(next);
+    return next;
   },
 
   async startPayment(intent: RentalIntent): Promise<RentalIntent> {

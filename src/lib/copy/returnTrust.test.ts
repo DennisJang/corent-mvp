@@ -6,6 +6,7 @@ import {
   HANDOFF_RITUAL_COPY,
   LISTING_CARD_COPY,
   formatFromOneDayPrice,
+  formatHandoffProgress,
   formatPriceBreakdown,
   getReturnTrustStatusCopy,
 } from "./returnTrust";
@@ -110,6 +111,12 @@ describe("HANDOFF_RITUAL_COPY + CLAIM_WINDOW_COPY", () => {
       HANDOFF_RITUAL_COPY.manualNoteHint,
       HANDOFF_RITUAL_COPY.conditionStatus,
       HANDOFF_RITUAL_COPY.returnConfirmed,
+      HANDOFF_RITUAL_COPY.dashboardSectionTitle,
+      HANDOFF_RITUAL_COPY.sellerConfirmAction,
+      HANDOFF_RITUAL_COPY.sellerConfirmDone,
+      HANDOFF_RITUAL_COPY.borrowerLater,
+      formatHandoffProgress("pickup", 3),
+      formatHandoffProgress("return", 5),
       ...Object.values(CLAIM_WINDOW_COPY),
     ].join(" ");
     for (const t of FORBIDDEN_TOKENS) {
@@ -132,6 +139,26 @@ describe("HANDOFF_RITUAL_COPY + CLAIM_WINDOW_COPY", () => {
     expect(HANDOFF_RITUAL_COPY.manualNoteHint).toBe(
       "메모나 링크로 상태 기록을 남길 수 있어요.",
     );
+  });
+
+  it("dashboard surface labels match the documented strings", () => {
+    expect(HANDOFF_RITUAL_COPY.dashboardSectionTitle).toBe("픽업·반납 체크");
+    expect(HANDOFF_RITUAL_COPY.sellerConfirmAction).toBe("판매자 확인");
+    expect(HANDOFF_RITUAL_COPY.sellerConfirmDone).toBe("판매자 확인 완료");
+    expect(HANDOFF_RITUAL_COPY.borrowerLater).toBe(
+      "대여자 확인은 실제 로그인 이후 연결됩니다.",
+    );
+  });
+});
+
+describe("formatHandoffProgress", () => {
+  it("renders pickup and return progress with documented shape", () => {
+    expect(formatHandoffProgress("pickup", 0)).toBe("픽업 체크 0/5");
+    expect(formatHandoffProgress("pickup", 3)).toBe("픽업 체크 3/5");
+    expect(formatHandoffProgress("return", 5)).toBe("반납 체크 5/5");
+  });
+  it("respects a custom total", () => {
+    expect(formatHandoffProgress("pickup", 2, 10)).toBe("픽업 체크 2/10");
   });
 });
 

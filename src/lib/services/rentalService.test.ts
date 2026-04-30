@@ -132,3 +132,127 @@ describe("rentalService.cancelByBorrower — borrower cancels own request", () =
     expect(stored?.status).toBe("requested");
   });
 });
+
+describe("rentalService.recordSellerHandoff — handoff persistence orchestration", () => {
+  const FULL_PICKUP_PATCH = {
+    checks: {
+      mainUnit: true,
+      components: true,
+      working: true,
+      appearance: true,
+      preexisting: true,
+    },
+  };
+
+  it("seller can record + persist a fresh pickup handoff", async () => {
+    const r = await makeRequestedRental();
+    const rec = await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+    );
+    expect(rec.rentalIntentId).toBe(r.id);
+    expect(rec.phase).toBe("pickup");
+    expect(rec.confirmedBySeller).toBe(true);
+    expect(rec.checks.mainUnit).toBe(true);
+
+    // Persistence round-trip via the read helpers.
+    const reload = await rentalService.getHandoffRecord(r.id, "pickup");
+    expect(reload).toEqual(rec);
+    const all = await rentalService.listHandoffRecords(r.id);
+    expect(all).toHaveLength(1);
+  });
+
+  it("upserts the same (rental, phase) — does not duplicate", async () => {
+    const r = await makeRequestedRental();
+    const a = await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      { checks: { mainUnit: true } },
+    );
+    const b = await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      { checks: { components: true } },
+    );
+    expect(a.id).toBe(b.id);
+    expect(b.checks.mainUnit).toBe(true);
+    expect(b.checks.components).toBe(true);
+    const all = await rentalService.listHandoffRecords(r.id);
+    expect(all).toHaveLength(1);
+  });
+
+  it("non-seller (borrower) cannot record — throws OwnershipError, no persisted record", async () => {
+    const r = await makeRequestedRental();
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "pickup",
+        BORROWER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    expect(await rentalService.getHandoffRecord(r.id, "pickup")).toBeNull();
+  });
+
+  it("non-seller (stranger) cannot record — no persisted record", async () => {
+    const r = await makeRequestedRental();
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "pickup",
+        STRANGER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    expect(await rentalService.getHandoffRecord(r.id, "pickup")).toBeNull();
+  });
+
+  it("empty actorUserId is rejected", async () => {
+    const r = await makeRequestedRental();
+    await expect(
+      rentalService.recordSellerHandoff(r.id, "pickup", "", FULL_PICKUP_PATCH),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    expect(await rentalService.getHandoffRecord(r.id, "pickup")).toBeNull();
+  });
+
+  it("rejects when rental does not exist — does not write a record", async () => {
+    await expect(
+      rentalService.recordSellerHandoff(
+        "ri_does_not_exist",
+        "pickup",
+        SELLER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toThrow(/rental_not_found/);
+    expect(
+      await rentalService.getHandoffRecord("ri_does_not_exist", "pickup"),
+    ).toBeNull();
+  });
+
+  it("pickup and return phases are kept independent", async () => {
+    const r = await makeRequestedRental();
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+    );
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "return",
+      SELLER_ID,
+      { checks: { mainUnit: true } },
+      false,
+    );
+    const pickup = await rentalService.getHandoffRecord(r.id, "pickup");
+    const ret = await rentalService.getHandoffRecord(r.id, "return");
+    expect(pickup?.confirmedBySeller).toBe(true);
+    expect(ret?.confirmedBySeller).toBe(false);
+    expect(pickup?.phase).toBe("pickup");
+    expect(ret?.phase).toBe("return");
+  });
+});

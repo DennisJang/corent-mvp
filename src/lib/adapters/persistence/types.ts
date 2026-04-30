@@ -8,6 +8,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 
 export interface PersistenceAdapter {
   // RentalIntent
@@ -29,6 +30,18 @@ export interface PersistenceAdapter {
   // RentalEvent (append-only lifecycle log)
   appendRentalEvent(event: RentalEvent): Promise<void>;
   listRentalEvents(rentalIntentId: string): Promise<RentalEvent[]>;
+
+  // HandoffRecord — at most one record per (rentalIntentId, phase).
+  // Save is upsert; missing rows return null. See
+  // docs/corent_return_trust_layer.md §"Phase 1.3".
+  saveHandoffRecord(record: HandoffRecord): Promise<void>;
+  getHandoffRecord(
+    rentalIntentId: string,
+    phase: HandoffPhase,
+  ): Promise<HandoffRecord | null>;
+  listHandoffRecordsForRental(
+    rentalIntentId: string,
+  ): Promise<HandoffRecord[]>;
 
   // Wipe all CoRent-MVP-owned data. Used by the dashboard's "로컬 데이터
   // 비우기" affordance and by tests that need a clean slate.
