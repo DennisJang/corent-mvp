@@ -32,6 +32,69 @@ import type { RentalIntentStatus } from "@/domain/intents";
 export type HandoffPhase = "pickup" | "return";
 
 // --------------------------------------------------------------
+// HandoffChecks — five boolean flags captured during a pickup or a
+// return. Mirrors the user-facing labels in
+// src/lib/copy/returnTrust.ts (HANDOFF_RITUAL_COPY.checklist). Kept
+// flat so a future schema change can map each flag to a typed
+// evidence row without renaming.
+//
+// Phase 1.2 ships these as transient (in-memory only). Persistence
+// of HandoffRecord is intentionally deferred to keep this PR scoped
+// to types + service helpers + copy.
+// --------------------------------------------------------------
+
+export type HandoffChecks = {
+  mainUnit: boolean;     // 본체 확인
+  components: boolean;   // 구성품 확인
+  working: boolean;      // 작동 확인
+  appearance: boolean;   // 외관 상태 확인
+  preexisting: boolean;  // 기존 하자 확인
+};
+
+export const EMPTY_HANDOFF_CHECKS: HandoffChecks = {
+  mainUnit: false,
+  components: false,
+  working: false,
+  appearance: false,
+  preexisting: false,
+};
+
+export const HANDOFF_CHECKLIST_KEYS = [
+  "mainUnit",
+  "components",
+  "working",
+  "appearance",
+  "preexisting",
+] as const satisfies ReadonlyArray<keyof HandoffChecks>;
+
+export type HandoffChecklistKey = (typeof HANDOFF_CHECKLIST_KEYS)[number];
+
+// --------------------------------------------------------------
+// HandoffRecord — single record per (rentalIntent, phase). Holds the
+// five checks plus per-actor confirmation flags and optional
+// short-text note + manual evidence URL. There is intentionally no
+// upload / file pipeline; manualEvidenceUrl is a bounded string that
+// the seller or borrower may paste in if they captured evidence
+// elsewhere. The future evidence pipeline replaces this slot.
+// --------------------------------------------------------------
+
+export type HandoffRecord = {
+  id: string;
+  rentalIntentId: string;
+  phase: HandoffPhase;
+  checks: HandoffChecks;
+  confirmedBySeller: boolean;
+  confirmedByBorrower: boolean;
+  // Optional short-text note. Bounded by the handoff service.
+  note?: string;
+  // Optional URL to evidence stored elsewhere. Bounded; the service
+  // requires `http://` or `https://`. There is no upload pipeline.
+  manualEvidenceUrl?: string;
+  createdAt: string;
+  updatedAt: string;
+};
+
+// --------------------------------------------------------------
 // EvidenceType — the kind of artefact captured at a handoff. Mirrors
 // the boolean flags already on `VerificationChecks` so a future schema
 // change can promote each to a typed evidence row without renaming.

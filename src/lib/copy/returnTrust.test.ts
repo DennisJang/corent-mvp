@@ -105,11 +105,33 @@ describe("HANDOFF_RITUAL_COPY + CLAIM_WINDOW_COPY", () => {
     const all = [
       ...Object.values(HANDOFF_RITUAL_COPY.pickup),
       ...Object.values(HANDOFF_RITUAL_COPY.return),
+      ...Object.values(HANDOFF_RITUAL_COPY.checklist),
+      HANDOFF_RITUAL_COPY.noUploadYet,
+      HANDOFF_RITUAL_COPY.manualNoteHint,
+      HANDOFF_RITUAL_COPY.conditionStatus,
+      HANDOFF_RITUAL_COPY.returnConfirmed,
       ...Object.values(CLAIM_WINDOW_COPY),
     ].join(" ");
     for (const t of FORBIDDEN_TOKENS) {
       expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
     }
+  });
+
+  it("checklist labels match the documented 5 items", () => {
+    expect(HANDOFF_RITUAL_COPY.checklist.mainUnit).toBe("본체 확인");
+    expect(HANDOFF_RITUAL_COPY.checklist.components).toBe("구성품 확인");
+    expect(HANDOFF_RITUAL_COPY.checklist.working).toBe("작동 확인");
+    expect(HANDOFF_RITUAL_COPY.checklist.appearance).toBe("외관 상태 확인");
+    expect(HANDOFF_RITUAL_COPY.checklist.preexisting).toBe("기존 하자 확인");
+  });
+
+  it("explicitly states there is no upload yet and offers a manual note", () => {
+    expect(HANDOFF_RITUAL_COPY.noUploadYet).toBe(
+      "사진 업로드는 아직 구현되지 않았어요.",
+    );
+    expect(HANDOFF_RITUAL_COPY.manualNoteHint).toBe(
+      "메모나 링크로 상태 기록을 남길 수 있어요.",
+    );
   });
 });
 

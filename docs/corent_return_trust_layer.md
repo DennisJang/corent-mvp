@@ -214,6 +214,105 @@ What is **still not implemented** after this PR:
   helper without changing `approveRequest` / `declineRequest` /
   `cancelByBorrower` signatures — they already take `actorUserId`.
 
+### Phase 1.2 — Handoff / Return Ritual Skeleton (THIS PR)
+
+The first lightweight implementation of the Return Ritual. After this
+PR the data + service shape exists for both pickup and return checks;
+the interactive UI and persistence are deferred so the change stays
+small and reviewable.
+
+**What is now implemented:**
+
+- New domain types in [`src/domain/trust.ts`](../src/domain/trust.ts):
+  - `HandoffChecks` (5 booleans: `mainUnit`, `components`, `working`,
+    `appearance`, `preexisting`),
+  - `EMPTY_HANDOFF_CHECKS`,
+  - `HANDOFF_CHECKLIST_KEYS` (stable order),
+  - `HandoffRecord` (one record per `(rentalIntentId, phase)` with
+    `confirmedBySeller`, `confirmedByBorrower`, optional `note`,
+    optional `manualEvidenceUrl`).
+- Pure handoff helpers in
+  [`src/lib/services/handoffService.ts`](../src/lib/services/handoffService.ts):
+  - `createHandoffRecord(rentalIntentId, phase)` — fresh record, all
+    checks false, both confirmations false.
+  - `handoffService.confirmAsSeller(intent, record, actorUserId,
+    patch?, confirm?)` — runs `assertRentalSellerIs` BEFORE building
+    the new record. Patch applies an immutable update. `confirm=true`
+    flips `confirmedBySeller`.
+  - `handoffService.confirmAsBorrower(intent, record, actorUserId,
+    patch?, confirm?)` — runs `assertRentalBorrowerIs`. Hard-fails
+    with `HandoffInputError("phase_invalid")` if the rental has no
+    `borrowerId` recorded yet (real auth gap; documented below).
+  - `handoffService.isComplete(record)` and `completedCount(record)`
+    — read-only helpers for surface code.
+- Bounded input validation:
+  - `note` ≤ 240 chars, optional, `null` clears.
+  - `manualEvidenceUrl` ≤ 500 chars, must start with `http://` or
+    `https://` (the URL is stored, never fetched, never auto-rendered
+    as a clickable href by this module). `null` clears.
+  - `checks` only accepts the five known keys; non-boolean values
+    are rejected.
+  - All violations throw a typed `HandoffInputError` with a stable
+    `code` field.
+- Extended copy in
+  [`src/lib/copy/returnTrust.ts`](../src/lib/copy/returnTrust.ts):
+  `HANDOFF_RITUAL_COPY.checklist` now exposes the 5 Korean labels;
+  `HANDOFF_RITUAL_COPY.{noUploadYet, manualNoteHint, conditionStatus,
+  returnConfirmed}` are new top-level entries; `pickup.intro` and
+  `return.intro` add a one-line framing each. Copy tests scan every
+  new string against the regulated-language deny-list.
+
+**What is intentionally NOT implemented:**
+
+- **No persistence.** `HandoffRecord` lives only in caller memory.
+  The persistence adapter (`src/lib/adapters/persistence/types.ts`)
+  is unchanged. Saving / loading handoff records is Phase 1.3.
+- **No interactive UI.** Neither the seller dashboard nor the item
+  detail page currently surfaces the checklist. The dashboard's
+  `ActiveBlock` does not have a natural compact slot for a 5-step
+  checklist + note + URL field without redesigning rows or adding a
+  modal. Per the brief's "do not force UI" rule, surfacing is
+  deferred to Phase 1.3 along with persistence.
+- **No upload, no media storage, no file picker.** The
+  `manualEvidenceUrl` field is a typed slot for a URL the user pasted
+  in from elsewhere; the service never fetches or parses it.
+- **No automatic damage judgment.** The five checks are seller- and
+  borrower-recorded only. Mismatch handling is admin-routed in a
+  future PR.
+- **No claim window enforcement.** `ClaimWindow` types still exist;
+  the timer + admin routing are Phase 3.
+- **No payment, no deposit, no soft hold, no escrow, no settlement
+  payout, no insurance / guarantee / coverage language anywhere.**
+- **No seller storefront.** Still Phase 3.
+- **No real per-user authentication.** The dashboard still resolves
+  the mock seller via `getMockSellerSession()`.
+
+**Mapping to the existing `RentalIntent` state machine:**
+
+`rentalIntentMachine.ts` is unchanged. The handoff record is a
+**sibling concept** to the rental status — the same way `ClaimWindow`
+is documented in [§5](#5-mapping-to-existing-state-machine). A surface
+that wants to render the pickup checklist would scope its lookup to
+rentals at status `paid` or `pickup_confirmed`; the return checklist
+to rentals at `return_pending` or `return_confirmed`. No new
+transitions, no new statuses, no rename.
+
+**Real-auth gap (recorded as Phase 1.2's known limitation):**
+
+`handoffService.confirmAsBorrower` requires `intent.borrowerId` to be
+truthy. Today's request creation flow in `ItemDetailClient` calls
+`rentalService.create(...)` without attaching a borrower id (no real
+auth → no real borrower identity). Until real auth ships, the
+borrower-side handoff path is gated. The seller-side path works for
+mock-session sellers via `getMockSellerSession()`.
+
+The migration site is the same one called out in
+[`docs/mvp_security_guardrails.md`](mvp_security_guardrails.md) §5
+item 1: replace `getMockSellerSession()` with a server-resolved
+session, and have the rental-create flow attach the resolved
+borrower id at request time. No changes to `handoffService` are
+required when that happens — it already takes `actorUserId`.
+
 ### Phase 2 — later PR (gated by review)
 
 - Wire the Return Ritual checklist into the rental flow (pickup

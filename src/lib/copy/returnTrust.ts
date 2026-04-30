@@ -113,15 +113,31 @@ export const APPROVAL_COPY = {
 export const HANDOFF_RITUAL_COPY = {
   pickup: {
     sectionTitle: "픽업 체크",
+    intro: "픽업 때 상태를 함께 확인해요.",
     matchSameAsPhoto: "사진과 동일한 물건이에요",
     componentsPresent: "구성품이 모두 있어요",
     safetyCodeVisible: "안전 코드가 보여요",
   },
   return: {
     sectionTitle: "반납 체크",
+    intro: "반납 때 구성품과 작동 여부를 다시 확인해요.",
     sameCondition: "픽업 때와 같은 상태로 돌아왔어요",
     issueNoted: "상태 문제가 있어요",
   },
+  // 5-step checklist labels; keys mirror HandoffChecks 1:1.
+  checklist: {
+    mainUnit: "본체 확인",
+    components: "구성품 확인",
+    working: "작동 확인",
+    appearance: "외관 상태 확인",
+    preexisting: "기존 하자 확인",
+  },
+  // Static hints rendered next to the checklist. No upload claim, no
+  // payment / regulated language.
+  noUploadYet: "사진 업로드는 아직 구현되지 않았어요.",
+  manualNoteHint: "메모나 링크로 상태 기록을 남길 수 있어요.",
+  conditionStatus: "상태 확인",
+  returnConfirmed: "반납 확인",
 } as const;
 
 // --------------------------------------------------------------
