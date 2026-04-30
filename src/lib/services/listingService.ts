@@ -14,6 +14,7 @@ import { getPersistence } from "@/lib/adapters/persistence";
 import { generateId, nowIso } from "@/lib/ids";
 import { calculateRecommendedPriceTable } from "@/lib/pricing";
 import { generateListingSafetyCode } from "@/lib/safetyCode";
+import { validateListingDraft } from "@/lib/validators/listingInput";
 
 type DraftFromInputArgs = {
   sellerId: string;
@@ -172,11 +173,16 @@ export const listingService = {
   },
 
   async saveDraft(listing: ListingIntent): Promise<void> {
-    await getPersistence().saveListingIntent({
+    const next: ListingIntent = {
       ...listing,
       status: listing.status === "ai_extracted" ? "draft" : listing.status,
       updatedAt: nowIso(),
-    });
+    };
+    // Fail fast on malformed shape — defends the local-write boundary
+    // against AI-generated edits that drift past the bounds the future
+    // server-side adapter will enforce. Throws ListingInputError.
+    validateListingDraft(next);
+    await getPersistence().saveListingIntent(next);
   },
 
   async submitForReview(listing: ListingIntent): Promise<ListingIntent> {
@@ -193,6 +199,7 @@ export const listingService = {
       },
       updatedAt: nowIso(),
     };
+    validateListingDraft(next);
     await getPersistence().saveListingIntent(next);
     return next;
   },
