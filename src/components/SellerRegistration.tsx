@@ -323,8 +323,8 @@ export function SellerRegistration() {
                 <div className="px-6 py-4 border-t border-[color:var(--ink-12)]">
                   <span className="text-small text-[color:var(--ink-60)]">
                     가격은 추정 가치({formatKRW(listing.item.estimatedValue)})를
-                    기준으로 자동 계산됩니다. 수수료 10%는 반납 확인 후 자동으로
-                    빠져나갑니다.
+                    기준으로 자동 계산된 참고용 표시예요. 베타에서는 실제
+                    결제·정산이 동작하지 않아요.
                   </span>
                 </div>
               </section>

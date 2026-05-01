@@ -17,8 +17,8 @@ const TRUST_POINTS = [
   },
   {
     n: "03",
-    title: "반납 확인 후 정산",
-    desc: "거래는 플랫폼 안에서 진행되고, 반납이 확인되면 수수료 10%를 제외한 금액이 정산됩니다.",
+    title: "반납 확인 + 클레임 검토",
+    desc: "요청·승인·인계·반납 흐름을 기록하고, 반납 후 짧은 검토 기간이 끝나면 다음 단계로 진행합니다. 베타에서는 실제 결제·정산은 진행되지 않아요.",
   },
 ];
 
@@ -110,8 +110,8 @@ export default function LandingPage() {
                 단순한 신뢰로.
               </h2>
               <p className="text-body text-[color:var(--ink-60)] max-w-[360px]">
-                CoRent는 검수, 보증, 정산을 사용자가 보지 않아도 되는 만큼
-                숨깁니다. 화면에는 필요한 것만 남아요.
+                CoRent는 검수와 흐름 기록만 사용자가 보이는 만큼만 남깁니다.
+                베타에서는 실제 결제·보증금·정산이 동작하지 않아요.
               </p>
             </div>
             <ol className="col-span-12 md:col-span-8 flex flex-col">
@@ -186,13 +186,15 @@ export default function LandingPage() {
               <div className="grid grid-cols-2">
                 <div className="px-6 py-8 border-r border-b border-black flex flex-col gap-2">
                   <span className="text-caption text-[color:var(--ink-60)]">
-                    수수료
+                    베타 모드
                   </span>
-                  <span className="text-h2 tracking-tight">10%</span>
+                  <span className="text-h3 tracking-tight">
+                    실제 결제·정산 미연결
+                  </span>
                 </div>
                 <div className="px-6 py-8 border-b border-black flex flex-col gap-2">
                   <span className="text-caption text-[color:var(--ink-60)]">
-                    정산 시점
+                    검토 흐름
                   </span>
                   <span className="text-h3 tracking-tight">반납 확인 후</span>
                 </div>

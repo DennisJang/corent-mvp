@@ -14,17 +14,19 @@ import {
 } from "@/domain/intents";
 import { statusLabel } from "./IntentStatusBadge";
 
+// Same beta-suffix rule as `IntentStatusBadge` — the four money-adjacent
+// rows carry "(베타)" so the timeline never reads as "money was charged".
 const STEP_LABELS: Record<(typeof RENTAL_HAPPY_PATH)[number], string> = {
   draft: "임시 저장",
   requested: "요청 접수",
   seller_approved: "판매자 승인",
-  payment_pending: "결제 대기",
-  paid: "결제 완료",
+  payment_pending: "결제 단계 (베타)",
+  paid: "결제 단계 완료 (베타)",
   pickup_confirmed: "수령 확인",
   return_pending: "반납 대기",
   return_confirmed: "반납 확인",
-  settlement_ready: "정산 준비",
-  settled: "정산 완료",
+  settlement_ready: "정산 단계 준비 (베타)",
+  settled: "정산 단계 완료 (베타)",
 };
 
 type StepState = "completed" | "current" | "pending" | "failure" | "skipped";

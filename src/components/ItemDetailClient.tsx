@@ -96,8 +96,9 @@ export function ItemDetailClient({ product }: Props) {
       pending: !product.trust.serialOnFile,
     },
     {
-      label: "Return before settlement",
-      detail: "반납이 확인되기 전까지 정산은 진행되지 않아요.",
+      label: "Return-first review flow",
+      detail:
+        "반납 확인 단계가 끝나야 다음 단계가 열려요. 베타에서는 실제 결제·정산 처리가 진행되지 않아요.",
     },
   ];
 
@@ -153,9 +154,9 @@ export function ItemDetailClient({ product }: Props) {
                   </li>
                   <li className="flex items-baseline justify-between py-3 border-y border-[color:var(--ink-12)]">
                     <span className="text-small text-[color:var(--ink-60)]">
-                      정산
+                      다음 단계
                     </span>
-                    <span className="text-body">반납 확인 후</span>
+                    <span className="text-body">반납 확인 후 검토</span>
                   </li>
                 </ul>
 
@@ -232,14 +233,17 @@ export function ItemDetailClient({ product }: Props) {
         <div className="container-main py-16">
           <div className="grid-12 gap-y-8 items-start">
             <div className="col-span-12 md:col-span-4">
-              <span className="text-caption">Settlement / Deposit</span>
+              <span className="text-caption">Beta / Process Only</span>
             </div>
             <div className="col-span-12 md:col-span-8 flex flex-col gap-4 border-t border-black pt-6">
-              <h3 className="text-h3">반납이 확인되기 전까지는 정산되지 않습니다.</h3>
+              <h3 className="text-h3">
+                베타에서는 실제 결제 없이 흐름만 확인해요.
+              </h3>
               <p className="text-body text-[color:var(--ink-60)] max-w-[640px]">
-                반납이 확인되면 수수료 10%를 제외한 금액이 판매자에게
-                정산됩니다. 안전 보증금은 반납 확인 후 자동으로 환급돼요.
-                고가품의 경우 시리얼 번호는 비공개로만 사용해요.
+                요청·승인·인계·반납·클레임 검토는 기록 단계로만 동작합니다.
+                결제, 보증금, 정산, 환불, 에스크로, 자동 보상 처리는 아직
+                연결되어 있지 않아요. 고가품의 시리얼 번호는 비공개로만
+                보관합니다.
               </p>
             </div>
           </div>

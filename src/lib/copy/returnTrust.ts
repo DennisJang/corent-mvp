@@ -56,26 +56,29 @@ export function formatPriceBreakdown(prices: {
 // No payout / coverage / insurance language.
 // --------------------------------------------------------------
 
+// Beta posture: the four money-adjacent statuses carry "(베타)" so a
+// borrower-facing surface never reads as "money was actually charged
+// or paid out". The state-machine values are unchanged.
 const STATUS_COPY: Record<RentalIntentStatus, string> = {
   draft: "임시 저장 중",
   requested: "소유자 확인 대기 중",
-  seller_approved: "결제 단계로 안내했어요",
-  payment_pending: "결제 진행 중",
-  paid: "결제 완료 — 픽업 안내 대기",
+  seller_approved: "다음 단계로 안내했어요",
+  payment_pending: "결제 단계 진행 (베타)",
+  paid: "결제 단계 통과 (베타) — 픽업 안내 대기",
   pickup_confirmed: "픽업 확인 완료 — 대여 중",
   return_pending: "반납 확인 대기 중",
   return_confirmed: "반납 확인 완료 — 상태 기록 중",
-  settlement_ready: "정산 준비",
-  settled: "정상 반납 완료",
+  settlement_ready: "정산 단계 준비 (베타)",
+  settled: "정상 반납 완료 (베타: 실지급 없음)",
   cancelled: "취소됨",
-  payment_failed: "결제 실패 — 다시 시도할 수 있어요",
+  payment_failed: "결제 단계 실패 (베타) — 다시 시도할 수 있어요",
   seller_cancelled: "소유자가 요청을 취소했어요",
   borrower_cancelled: "요청이 취소되었어요",
   pickup_missed: "픽업 시점이 지났어요 — 일정 확인이 필요해요",
   return_overdue: "반납 예정일을 지났어요",
   damage_reported: "상태 문제 확인 중",
   dispute_opened: "관리자 검토 진행 중",
-  settlement_blocked: "정산 보류 — 관리자 검토 중",
+  settlement_blocked: "정산 단계 보류 (베타) — 관리자 검토 중",
 };
 
 export function getReturnTrustStatusCopy(status: RentalIntentStatus): string {

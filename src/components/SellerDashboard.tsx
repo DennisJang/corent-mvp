@@ -441,8 +441,8 @@ export function SellerDashboard() {
                 이번 달도 차분하게.
               </h1>
               <p className="text-body text-[color:var(--ink-60)] max-w-[480px]">
-                대여 요청과 반납만 확인하면 돼요. 정산은 반납 확인 후 자동으로
-                진행됩니다.
+                대여 요청, 인계, 반납, 클레임 검토 흐름만 확인하면 돼요.
+                베타에서는 실제 결제·정산·환불이 진행되지 않아요.
               </p>
               {isUsingMockFallback ? (
                 <div className="border border-dashed border-[color:var(--line-dashed)] px-4 py-3 text-small flex items-center justify-between gap-4">
@@ -486,9 +486,9 @@ export function SellerDashboard() {
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 border-l border-[color:var(--ink-12)]">
             <SellerDashboardStat
               index={0}
-              label="이번 달 정산"
+              label="이번 달 누적 (참고용)"
               value={formatKRW(summary.monthlyEarnings)}
-              hint={`정산 준비 ${formatKRW(summary.pendingSettlement)} 대기 중`}
+              hint={`참고용 합계 ${formatKRW(summary.pendingSettlement)} · 베타: 실지급 없음`}
             />
             <SellerDashboardStat
               index={1}
