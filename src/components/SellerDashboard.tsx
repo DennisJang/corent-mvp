@@ -15,6 +15,7 @@ import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
 import {
   EMPTY_USER_TRUST_SUMMARY,
+  type ClaimWindow,
   type HandoffPhase,
   type HandoffRecord,
   type UserTrustSummary,
@@ -30,7 +31,12 @@ import { rentalService } from "@/lib/services/rentalService";
 import { listingService } from "@/lib/services/listingService";
 import { trustEventService } from "@/lib/services/trustEvents";
 import {
+  ClaimReviewInputError,
+  claimReviewService,
+} from "@/lib/services/claimReviewService";
+import {
   APPROVAL_COPY,
+  CLAIM_WINDOW_COPY,
   HANDOFF_RITUAL_COPY,
   TRUST_SUMMARY_COPY,
   formatHandoffProgress,
@@ -71,6 +77,9 @@ export function SellerDashboard() {
     userId: CURRENT_SELLER.id,
     ...EMPTY_USER_TRUST_SUMMARY,
   }));
+  const [claimWindowByRental, setClaimWindowByRental] = useState<
+    Map<string, ClaimWindow>
+  >(() => new Map());
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -103,6 +112,17 @@ export function SellerDashboard() {
     setTrustSummary(
       await trustEventService.summarizeUserTrust(session.sellerId),
     );
+    // Phase 1.5: claim windows for the seller's post-return rentals.
+    // The window is opened automatically by `confirmReturn`; the
+    // dashboard reads it back so the seller can decide between
+    // "정상 반납으로 마무리" and "상태 문제 보고".
+    const claimByRental = new Map<string, ClaimWindow>();
+    for (const rental of r) {
+      if (rental.sellerId !== CURRENT_SELLER.id) continue;
+      const cw = await claimReviewService.getClaimWindowForRental(rental.id);
+      if (cw) claimByRental.set(rental.id, cw);
+    }
+    setClaimWindowByRental(claimByRental);
   };
 
   // Read persisted state once on mount. Effect-setState is intentional —
@@ -165,6 +185,19 @@ export function SellerDashboard() {
       0,
     [trustSummary],
   );
+
+  // Claim rows: REAL persisted rentals only with an opened claim
+  // window. Like the handoff block, this never renders against the
+  // mock-fallback fixtures, since the orchestrator would reject
+  // closing a window that isn't persisted.
+  const claimRows = useMemo(() => {
+    const rows: Array<{ intent: RentalIntent; window: ClaimWindow }> = [];
+    for (const rental of myRentals) {
+      const w = claimWindowByRental.get(rental.id);
+      if (w) rows.push({ intent: rental, window: w });
+    }
+    return rows;
+  }, [myRentals, claimWindowByRental]);
 
   // Handoff rows derive from the seller's REAL rentals only — the
   // mock fallback set is not persisted, so rendering an interactive
@@ -281,6 +314,61 @@ export function SellerDashboard() {
         e instanceof OwnershipError
           ? "이 요청에 대한 권한이 없어요."
           : "체크 기록을 저장하지 못했어요.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleCloseNoClaim = async (intent: RentalIntent) => {
+    setBusyId(intent.id);
+    setToast(null);
+    try {
+      const next = await claimReviewService.closeClaimWindowAsNoClaim(
+        intent.id,
+        session.sellerId,
+      );
+      setClaimWindowByRental((prev) => {
+        const m = new Map(prev);
+        m.set(intent.id, next);
+        return m;
+      });
+      setToast(CLAIM_WINDOW_COPY.closedNoClaim);
+    } catch (e) {
+      setToast(
+        e instanceof OwnershipError
+          ? "이 요청에 대한 권한이 없어요."
+          : e instanceof ClaimReviewInputError
+            ? "상태를 변경할 수 없어요."
+            : "처리하지 못했어요.",
+      );
+    } finally {
+      setBusyId(null);
+    }
+  };
+
+  const handleOpenClaim = async (intent: RentalIntent, reason?: string) => {
+    setBusyId(intent.id);
+    setToast(null);
+    try {
+      const { window: next } = await claimReviewService.openClaim(
+        intent.id,
+        session.sellerId,
+        reason,
+      );
+      setClaimWindowByRental((prev) => {
+        const m = new Map(prev);
+        m.set(intent.id, next);
+        return m;
+      });
+      setToast(CLAIM_WINDOW_COPY.closedWithClaim);
+    } catch (e) {
+      setToast(
+        e instanceof OwnershipError
+          ? "이 요청에 대한 권한이 없어요."
+          : e instanceof ClaimReviewInputError
+            ? "상태를 변경할 수 없어요."
+            : "처리하지 못했어요.",
       );
     } finally {
       setBusyId(null);
@@ -457,6 +545,19 @@ export function SellerDashboard() {
               rows={handoffRows}
               busyId={busyId}
               onConfirm={handleSellerHandoff}
+            />
+          </div>
+        </section>
+      ) : null}
+
+      {claimRows.length > 0 ? (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-16">
+            <ClaimWindowBlock
+              rows={claimRows}
+              busyId={busyId}
+              onCloseNoClaim={handleCloseNoClaim}
+              onOpenClaim={handleOpenClaim}
             />
           </div>
         </section>
@@ -794,6 +895,126 @@ function HandoffBlock({
                     ? HANDOFF_RITUAL_COPY.sellerConfirmDone
                     : HANDOFF_RITUAL_COPY.sellerConfirmAction}
                 </Button>
+              </div>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+function ClaimWindowBlock({
+  rows,
+  busyId,
+  onCloseNoClaim,
+  onOpenClaim,
+}: {
+  rows: Array<{ intent: RentalIntent; window: ClaimWindow }>;
+  busyId: string | null;
+  onCloseNoClaim: (intent: RentalIntent) => void;
+  onOpenClaim: (intent: RentalIntent, reason?: string) => void;
+}) {
+  const [reasonByRental, setReasonByRental] = useState<Record<string, string>>(
+    {},
+  );
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <h3 className="text-title">{CLAIM_WINDOW_COPY.sectionTitle}</h3>
+        <Badge variant="dashed">{rows.length}건</Badge>
+      </header>
+      <div className="px-6 pt-4 pb-2 flex flex-col gap-1">
+        <span className="text-small text-[color:var(--ink-60)]">
+          {CLAIM_WINDOW_COPY.intro}
+        </span>
+        <span className="text-small text-[color:var(--ink-60)]">
+          {CLAIM_WINDOW_COPY.noPayoutNote}
+        </span>
+      </div>
+      <ul className="flex flex-col">
+        {rows.map((row) => {
+          const isOpen = row.window.status === "open";
+          const isClosedWithClaim =
+            row.window.status === "closed_with_claim";
+          const isClosedNoClaim = row.window.status === "closed_no_claim";
+          const reason = reasonByRental[row.intent.id] ?? "";
+          return (
+            <li
+              key={row.window.id}
+              className="grid grid-cols-1 md:grid-cols-[1fr_auto] gap-6 px-6 py-5 items-start border-t border-[color:var(--ink-12)]"
+            >
+              <div className="flex flex-col gap-2">
+                <span className="text-body font-medium">
+                  {row.intent.productName}
+                </span>
+                <span className="text-small text-[color:var(--ink-60)]">
+                  {row.intent.borrowerName ?? "익명"} ·{" "}
+                  {row.intent.durationDays}일
+                </span>
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  {isOpen
+                    ? CLAIM_WINDOW_COPY.open
+                    : isClosedNoClaim
+                      ? CLAIM_WINDOW_COPY.closedNoClaim
+                      : CLAIM_WINDOW_COPY.closedWithClaim}
+                </span>
+                {isOpen ? (
+                  <label className="flex flex-col gap-1 mt-2">
+                    <span className="text-caption text-[color:var(--ink-60)]">
+                      {CLAIM_WINDOW_COPY.reasonLabel}
+                    </span>
+                    <input
+                      type="text"
+                      value={reason}
+                      maxLength={240}
+                      placeholder={CLAIM_WINDOW_COPY.reasonPlaceholder}
+                      onChange={(e) =>
+                        setReasonByRental((prev) => ({
+                          ...prev,
+                          [row.intent.id]: e.target.value,
+                        }))
+                      }
+                      className="border border-[color:var(--ink-20)] px-3 py-2 text-body"
+                    />
+                  </label>
+                ) : null}
+              </div>
+              <div className="flex flex-col items-stretch md:items-end gap-2">
+                {isOpen ? (
+                  <>
+                    <Button
+                      size="md"
+                      variant="secondary"
+                      onClick={() => onCloseNoClaim(row.intent)}
+                      disabled={busyId === row.intent.id}
+                      type="button"
+                    >
+                      {CLAIM_WINDOW_COPY.closeNoClaimAction}
+                    </Button>
+                    <Button
+                      size="md"
+                      onClick={() =>
+                        onOpenClaim(
+                          row.intent,
+                          reason.length > 0 ? reason : undefined,
+                        )
+                      }
+                      disabled={busyId === row.intent.id}
+                      type="button"
+                    >
+                      {CLAIM_WINDOW_COPY.openClaimAction}
+                    </Button>
+                  </>
+                ) : (
+                  <Badge
+                    variant={isClosedWithClaim ? "selected" : "outline"}
+                  >
+                    {isClosedWithClaim
+                      ? CLAIM_WINDOW_COPY.closedWithClaim
+                      : CLAIM_WINDOW_COPY.closedNoClaim}
+                  </Badge>
+                )}
               </div>
             </li>
           );

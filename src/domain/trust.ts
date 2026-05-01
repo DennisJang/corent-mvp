@@ -185,6 +185,55 @@ export type ClaimWindow = {
 };
 
 // --------------------------------------------------------------
+// ClaimReview — admin review skeleton. When a claim window closes
+// with `closed_with_claim`, a ClaimReview row is opened so an admin
+// can record a placeholder decision. The status vocabulary is
+// intentionally small: `open` (waiting on admin), `approved` (claim
+// upheld), `rejected` (claim dismissed), `needs_review` (admin asked
+// for more information; treated as still-open at the dashboard).
+//
+// This is a SKELETON layer. A decision here:
+//   - DOES NOT trigger any payment, deposit forfeiture, refund,
+//     escrow movement, or PG call. There is no money path here.
+//   - DOES NOT auto-advance the rental status. The existing
+//     `rentalIntentMachine` is unchanged.
+//   - DOES NOT auto-block, auto-limit, or auto-score the borrower
+//     or seller. Only the `accountStanding` field on
+//     `UserTrustSummary` reflects admin standing, and that is
+//     manual-only.
+//
+// The decision is stored as state + emits a `TrustEvent` of type
+// `admin_decision_recorded`. Real dispute automation, deposit
+// handling, and legal adjudication are explicitly out of scope.
+// --------------------------------------------------------------
+
+export type ClaimReviewStatus =
+  | "open"
+  | "approved"
+  | "rejected"
+  | "needs_review";
+
+export type ClaimReview = {
+  id: string;
+  rentalIntentId: string;
+  // The ClaimWindow this review was opened from. A review without a
+  // backing window is invalid; the service layer enforces the link.
+  claimWindowId: string;
+  status: ClaimReviewStatus;
+  openedAt: string;
+  // Bounded short-text reason supplied by the seller when opening
+  // the claim. Optional. Never echoes PII.
+  openedReason?: string;
+  // Admin who recorded the decision. Today this is the founder email
+  // resolved by the admin auth boundary; in a future PR it becomes a
+  // server-resolved admin user id.
+  decidedBy?: string;
+  decidedAt?: string;
+  // Bounded short-text annotation written by the admin. Optional.
+  decisionNotes?: string;
+};
+
+// --------------------------------------------------------------
 // BorrowerUnlockLevel — derived, not stored as a privilege. Drives
 // copy variations and (later) the conditional-soft-hold decision.
 // --------------------------------------------------------------

@@ -181,7 +181,36 @@ export const TRUST_SUMMARY_COPY = {
 // --------------------------------------------------------------
 
 export const CLAIM_WINDOW_COPY = {
+  sectionTitle: "반납 후 상태 확인",
   open: "반납 후 상태 확인 기간",
   closedNoClaim: "정상 반납으로 마무리",
   closedWithClaim: "상태 문제 확인 — 관리자 검토 중",
+  closeNoClaimAction: "정상 반납으로 마무리",
+  openClaimAction: "상태 문제 보고",
+  reasonLabel: "상태 문제 메모 (선택)",
+  reasonPlaceholder: "예: 본체에 새로운 흠집이 보여요.",
+  intro: "반납 직후 상태를 한 번 더 확인하는 기간이에요.",
+  noPayoutNote: "결제·정산 처리는 아직 연결되어 있지 않아요.",
+} as const;
+
+// --------------------------------------------------------------
+// CLAIM_REVIEW_COPY — admin-side decision skeleton labels. No payout,
+// deposit, refund, or insurance words. The three decisions are
+// placeholder state — recording one does NOT trigger money movement.
+// --------------------------------------------------------------
+
+export const CLAIM_REVIEW_COPY = {
+  pageTitle: "관리자 검토 큐",
+  pageHint:
+    "관리자 결정은 기록만 남기고 결제·정산을 자동으로 움직이지 않아요.",
+  emptyQueue: "검토할 항목이 없어요.",
+  statusOpen: "검토 대기",
+  statusApproved: "승인",
+  statusRejected: "반려",
+  statusNeedsReview: "추가 검토 필요",
+  decisionApproveAction: "승인",
+  decisionRejectAction: "반려",
+  decisionNeedsReviewAction: "추가 검토",
+  decisionNotesLabel: "검토 메모 (선택)",
+  decisionNotesPlaceholder: "예: 픽업 사진과 비교 결과 차이가 작아요.",
 } as const;

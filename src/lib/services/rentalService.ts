@@ -28,6 +28,7 @@ import {
   createHandoffRecord,
   handoffService,
 } from "@/lib/services/handoffService";
+import { claimReviewService } from "@/lib/services/claimReviewService";
 import { trustEventService } from "@/lib/services/trustEvents";
 import {
   approveRentalIntent,
@@ -249,7 +250,13 @@ export const rentalService = {
   async confirmReturn(intent: RentalIntent): Promise<RentalIntent> {
     const r = confirmReturn(intent);
     if (!r.ok) throw new Error(r.message);
-    return persistAndEmit(r);
+    const next = await persistAndEmit(r);
+    // Phase 1.5 integration: opening the post-return claim window is
+    // idempotent at the service layer, so re-confirming the return
+    // (or transitioning out of damage_reported back into
+    // return_confirmed in a future flow) is safe.
+    await claimReviewService.openClaimWindow(next.id);
+    return next;
   },
 
   async readySettlement(intent: RentalIntent): Promise<RentalIntent> {

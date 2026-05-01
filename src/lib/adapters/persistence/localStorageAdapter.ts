@@ -10,6 +10,8 @@ import type {
   SearchIntent,
 } from "@/domain/intents";
 import type {
+  ClaimReview,
+  ClaimWindow,
   HandoffPhase,
   HandoffRecord,
   TrustEvent,
@@ -23,6 +25,8 @@ const KEYS = {
   rentalEvents: "corent:rentalEvents",
   handoffRecords: "corent:handoffRecords",
   trustEvents: "corent:trustEvents",
+  claimWindows: "corent:claimWindows",
+  claimReviews: "corent:claimReviews",
 } as const;
 
 // Composite key inside the handoff blob: `${rentalIntentId}:${phase}`.
@@ -168,6 +172,47 @@ export class LocalStoragePersistenceAdapter implements PersistenceAdapter {
   }
   async listTrustEvents(): Promise<TrustEvent[]> {
     const all = readJson<Record<string, TrustEvent>>(KEYS.trustEvents, {});
+    return Object.values(all);
+  }
+
+  async saveClaimWindow(window: ClaimWindow): Promise<void> {
+    const all = readJson<Record<string, ClaimWindow>>(KEYS.claimWindows, {});
+    all[window.id] = window;
+    writeJson(KEYS.claimWindows, all);
+  }
+  async getClaimWindowForRental(
+    rentalIntentId: string,
+  ): Promise<ClaimWindow | null> {
+    const all = readJson<Record<string, ClaimWindow>>(KEYS.claimWindows, {});
+    for (const w of Object.values(all)) {
+      if (w.rentalIntentId === rentalIntentId) return w;
+    }
+    return null;
+  }
+  async listClaimWindows(): Promise<ClaimWindow[]> {
+    const all = readJson<Record<string, ClaimWindow>>(KEYS.claimWindows, {});
+    return Object.values(all);
+  }
+
+  async saveClaimReview(review: ClaimReview): Promise<void> {
+    const all = readJson<Record<string, ClaimReview>>(KEYS.claimReviews, {});
+    all[review.id] = review;
+    writeJson(KEYS.claimReviews, all);
+  }
+  async getClaimReview(id: string): Promise<ClaimReview | null> {
+    const all = readJson<Record<string, ClaimReview>>(KEYS.claimReviews, {});
+    return all[id] ?? null;
+  }
+  async listClaimReviewsForRental(
+    rentalIntentId: string,
+  ): Promise<ClaimReview[]> {
+    const all = readJson<Record<string, ClaimReview>>(KEYS.claimReviews, {});
+    return Object.values(all).filter(
+      (r) => r.rentalIntentId === rentalIntentId,
+    );
+  }
+  async listClaimReviews(): Promise<ClaimReview[]> {
+    const all = readJson<Record<string, ClaimReview>>(KEYS.claimReviews, {});
     return Object.values(all);
   }
 

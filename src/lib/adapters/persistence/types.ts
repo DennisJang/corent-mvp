@@ -9,6 +9,8 @@ import type {
   SearchIntent,
 } from "@/domain/intents";
 import type {
+  ClaimReview,
+  ClaimWindow,
   HandoffPhase,
   HandoffRecord,
   TrustEvent,
@@ -55,6 +57,21 @@ export interface PersistenceAdapter {
   saveTrustEvent(event: TrustEvent): Promise<void>;
   listTrustEventsForRental(rentalIntentId: string): Promise<TrustEvent[]>;
   listTrustEvents(): Promise<TrustEvent[]>;
+
+  // ClaimWindow — at most one window per rental. Save is upsert by id;
+  // the service layer keys lookups on `rentalIntentId`. See
+  // docs/corent_return_trust_layer.md §"Phase 1.5".
+  saveClaimWindow(window: ClaimWindow): Promise<void>;
+  getClaimWindowForRental(rentalIntentId: string): Promise<ClaimWindow | null>;
+  listClaimWindows(): Promise<ClaimWindow[]>;
+
+  // ClaimReview — at most one review per rental in this skeleton phase.
+  // Save is upsert by id. Reads are scoped per rental or global for the
+  // admin queue.
+  saveClaimReview(review: ClaimReview): Promise<void>;
+  getClaimReview(id: string): Promise<ClaimReview | null>;
+  listClaimReviewsForRental(rentalIntentId: string): Promise<ClaimReview[]>;
+  listClaimReviews(): Promise<ClaimReview[]>;
 
   // Wipe all CoRent-MVP-owned data. Used by the dashboard's "로컬 데이터
   // 비우기" affordance and by tests that need a clean slate.

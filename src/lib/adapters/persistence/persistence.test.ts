@@ -6,7 +6,12 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
-import type { HandoffRecord, TrustEvent } from "@/domain/trust";
+import type {
+  ClaimReview,
+  ClaimWindow,
+  HandoffRecord,
+  TrustEvent,
+} from "@/domain/trust";
 import { LocalStoragePersistenceAdapter } from "@/lib/adapters/persistence/localStorageAdapter";
 import { MemoryPersistenceAdapter } from "@/lib/adapters/persistence/memoryAdapter";
 import type { PersistenceAdapter } from "@/lib/adapters/persistence/types";
@@ -174,6 +179,23 @@ const otherRentalTrustEvent: TrustEvent = {
   actor: "seller",
 };
 
+const baseClaimWindow: ClaimWindow = {
+  id: "cw_test",
+  rentalIntentId: baseRentalIntent.id,
+  status: "open",
+  openedAt: "2026-04-29T00:07:00.000Z",
+  closesAt: "2026-04-30T00:07:00.000Z",
+};
+
+const baseClaimReview: ClaimReview = {
+  id: "crv_test",
+  rentalIntentId: baseRentalIntent.id,
+  claimWindowId: baseClaimWindow.id,
+  status: "open",
+  openedAt: "2026-04-29T00:08:00.000Z",
+  openedReason: "본체에 새로운 흠집이 보여요",
+};
+
 function makeRentalIntent(overrides: Partial<RentalIntent> = {}): RentalIntent {
   return {
     ...baseRentalIntent,
@@ -296,6 +318,8 @@ describe("MemoryPersistenceAdapter", () => {
     await expectAdapterSupportsMvpEntities(adapter);
     await adapter.saveHandoffRecord(basePickupHandoff);
     await adapter.saveTrustEvent(basePickupTrustEvent);
+    await adapter.saveClaimWindow(baseClaimWindow);
+    await adapter.saveClaimReview(baseClaimReview);
     await adapter.clearAll();
 
     expect(await adapter.listRentalIntents()).toEqual([]);
@@ -313,6 +337,84 @@ describe("MemoryPersistenceAdapter", () => {
     expect(
       await adapter.listTrustEventsForRental(baseRentalIntent.id),
     ).toEqual([]);
+    expect(await adapter.listClaimWindows()).toEqual([]);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(await adapter.listClaimReviews()).toEqual([]);
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+  });
+
+  it("saves and reads claim windows scoped per rental", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(await adapter.listClaimWindows()).toEqual([]);
+
+    await adapter.saveClaimWindow(baseClaimWindow);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toEqual(baseClaimWindow);
+    expect(await adapter.listClaimWindows()).toEqual([baseClaimWindow]);
+
+    // Re-saving the same id overwrites instead of duplicating.
+    const closed: ClaimWindow = {
+      ...baseClaimWindow,
+      status: "closed_no_claim",
+      closedAt: "2026-04-29T01:00:00.000Z",
+    };
+    await adapter.saveClaimWindow(closed);
+    expect(await adapter.listClaimWindows()).toEqual([closed]);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toEqual(closed);
+  });
+
+  it("saves, reads, and scopes claim reviews per rental", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(await adapter.listClaimReviews()).toEqual([]);
+
+    await adapter.saveClaimReview(baseClaimReview);
+    expect(await adapter.getClaimReview(baseClaimReview.id)).toEqual(
+      baseClaimReview,
+    );
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([baseClaimReview]);
+    expect(await adapter.listClaimReviews()).toEqual([baseClaimReview]);
+
+    const otherReview: ClaimReview = {
+      ...baseClaimReview,
+      id: "crv_other",
+      rentalIntentId: "ri_other",
+      claimWindowId: "cw_other",
+    };
+    await adapter.saveClaimReview(otherReview);
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([baseClaimReview]);
+    expect(await adapter.listClaimReviewsForRental("ri_other")).toEqual([
+      otherReview,
+    ]);
+
+    // Re-saving the same id overwrites.
+    const decided: ClaimReview = {
+      ...baseClaimReview,
+      status: "approved",
+      decidedBy: "founder@example.com",
+      decidedAt: "2026-04-29T02:00:00.000Z",
+    };
+    await adapter.saveClaimReview(decided);
+    expect(await adapter.getClaimReview(baseClaimReview.id)).toEqual(decided);
+    expect(await adapter.listClaimReviews()).toHaveLength(2);
   });
 
   it("saves, reads, lists, and updates handoff records by (rental, phase)", async () => {
@@ -497,6 +599,12 @@ describe("LocalStoragePersistenceAdapter", () => {
       "corent:trustEvents": JSON.stringify({
         [basePickupTrustEvent.id]: basePickupTrustEvent,
       }),
+      "corent:claimWindows": JSON.stringify({
+        [baseClaimWindow.id]: baseClaimWindow,
+      }),
+      "corent:claimReviews": JSON.stringify({
+        [baseClaimReview.id]: baseClaimReview,
+      }),
       unrelated: "keep me",
     });
     const adapter = new LocalStoragePersistenceAdapter();
@@ -518,6 +626,56 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(
       await adapter.listTrustEventsForRental(baseRentalIntent.id),
     ).toEqual([]);
+    expect(await adapter.listClaimWindows()).toEqual([]);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(await adapter.listClaimReviews()).toEqual([]);
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+  });
+
+  it("saves and reads claim windows + claim reviews", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(await adapter.listClaimWindows()).toEqual([]);
+    expect(await adapter.getClaimReview(baseClaimReview.id)).toBeNull();
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(await adapter.listClaimReviews()).toEqual([]);
+
+    await adapter.saveClaimWindow(baseClaimWindow);
+    await adapter.saveClaimReview(baseClaimReview);
+
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toEqual(baseClaimWindow);
+    expect(await adapter.listClaimWindows()).toEqual([baseClaimWindow]);
+
+    expect(await adapter.getClaimReview(baseClaimReview.id)).toEqual(
+      baseClaimReview,
+    );
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([baseClaimReview]);
+    expect(await adapter.listClaimReviews()).toEqual([baseClaimReview]);
+
+    // Re-saving overwrites instead of duplicating.
+    const decided: ClaimReview = {
+      ...baseClaimReview,
+      status: "approved",
+      decidedBy: "founder@example.com",
+      decidedAt: "2026-04-29T02:00:00.000Z",
+    };
+    await adapter.saveClaimReview(decided);
+    expect(await adapter.getClaimReview(baseClaimReview.id)).toEqual(decided);
+    expect(await adapter.listClaimReviews()).toHaveLength(1);
   });
 
   it("saves and reads handoff records keyed by (rental, phase)", async () => {

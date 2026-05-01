@@ -8,6 +8,8 @@ import type {
   SearchIntent,
 } from "@/domain/intents";
 import type {
+  ClaimReview,
+  ClaimWindow,
   HandoffPhase,
   HandoffRecord,
   TrustEvent,
@@ -28,6 +30,8 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected rentalEvents = new Map<string, RentalEvent[]>();
   protected handoffRecords = new Map<string, HandoffRecord>();
   protected trustEvents = new Map<string, TrustEvent>();
+  protected claimWindows = new Map<string, ClaimWindow>();
+  protected claimReviews = new Map<string, ClaimReview>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
     this.rentalIntents.set(intent.id, intent);
@@ -106,6 +110,40 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     return Array.from(this.trustEvents.values());
   }
 
+  async saveClaimWindow(window: ClaimWindow): Promise<void> {
+    this.claimWindows.set(window.id, window);
+  }
+  async getClaimWindowForRental(
+    rentalIntentId: string,
+  ): Promise<ClaimWindow | null> {
+    for (const w of this.claimWindows.values()) {
+      if (w.rentalIntentId === rentalIntentId) return w;
+    }
+    return null;
+  }
+  async listClaimWindows(): Promise<ClaimWindow[]> {
+    return Array.from(this.claimWindows.values());
+  }
+
+  async saveClaimReview(review: ClaimReview): Promise<void> {
+    this.claimReviews.set(review.id, review);
+  }
+  async getClaimReview(id: string): Promise<ClaimReview | null> {
+    return this.claimReviews.get(id) ?? null;
+  }
+  async listClaimReviewsForRental(
+    rentalIntentId: string,
+  ): Promise<ClaimReview[]> {
+    const out: ClaimReview[] = [];
+    for (const r of this.claimReviews.values()) {
+      if (r.rentalIntentId === rentalIntentId) out.push(r);
+    }
+    return out;
+  }
+  async listClaimReviews(): Promise<ClaimReview[]> {
+    return Array.from(this.claimReviews.values());
+  }
+
   async clearAll(): Promise<void> {
     this.rentalIntents.clear();
     this.listingIntents.clear();
@@ -113,5 +151,7 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     this.rentalEvents.clear();
     this.handoffRecords.clear();
     this.trustEvents.clear();
+    this.claimWindows.clear();
+    this.claimReviews.clear();
   }
 }

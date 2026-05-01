@@ -530,6 +530,94 @@ transitions, no new statuses.
   untouched.
 - **No new dependencies.**
 
+### Phase 1.5 — Claim Window + Admin Review Skeleton (THIS PR)
+
+After this PR, a post-return claim window is opened automatically when
+a rental reaches `return_confirmed`, the seller can either close the
+window cleanly or open a claim, and an admin queue (`/admin/claims`)
+exposes a placeholder approve / reject / needs-review decision. None
+of these moves money, triggers a refund, deposits, escrow, a PG call,
+or a notification — this is a SKELETON only.
+
+**What is now implemented:**
+
+- **New domain types** in
+  [`src/domain/trust.ts`](../src/domain/trust.ts):
+  - `ClaimReviewStatus` = `"open" | "approved" | "rejected" | "needs_review"`.
+  - `ClaimReview` — `{ id, rentalIntentId, claimWindowId, status,
+    openedAt, openedReason?, decidedBy?, decidedAt?, decisionNotes? }`.
+- **Persistence** in
+  [`src/lib/adapters/persistence/types.ts`](../src/lib/adapters/persistence/types.ts)
+  + both adapters (memory + localStorage). New methods:
+  - `saveClaimWindow(window)` / `getClaimWindowForRental(id)` /
+    `listClaimWindows()`.
+  - `saveClaimReview(review)` / `getClaimReview(id)` /
+    `listClaimReviewsForRental(id)` / `listClaimReviews()`.
+  - `clearAll()` now wipes the new `corent:claimWindows` and
+    `corent:claimReviews` keys.
+- **`claimReviewService` orchestration** in
+  [`src/lib/services/claimReviewService.ts`](../src/lib/services/claimReviewService.ts):
+  - `openClaimWindow(rentalIntentId)` — idempotent. Opens a window
+    only when the rental is at `return_confirmed` (or further along
+    the post-return statuses). Emits `claim_window_opened`.
+  - `closeClaimWindowAsNoClaim(rentalIntentId, actorUserId)` — runs
+    `assertRentalSellerIs` BEFORE any persistence write. Emits
+    `claim_window_closed`.
+  - `openClaim(rentalIntentId, actorUserId, reason?)` — runs
+    `assertRentalSellerIs`, closes the window with
+    `closed_with_claim`, creates a `ClaimReview` row in `open`, and
+    emits `claim_window_closed` + `admin_review_started`.
+  - `recordAdminDecision(reviewId, decision, decidedBy, notes?)` —
+    sets the review to `approved` / `rejected` / `needs_review`.
+    `needs_review` keeps the row eligible for a follow-up decision;
+    `approved` and `rejected` are final. Emits
+    `admin_decision_recorded`.
+- **`rentalService.confirmReturn` integration** — calls
+  `claimReviewService.openClaimWindow(next.id)` after persisting, so
+  every confirmed return automatically opens a window.
+- **Seller dashboard surface** in
+  [`src/components/SellerDashboard.tsx`](../src/components/SellerDashboard.tsx):
+  a new compact `ClaimWindowBlock` appears whenever the seller has a
+  real (persisted) rental with an opened window. Each row exposes
+  `정상 반납으로 마무리` and `상태 문제 보고` actions plus a bounded
+  optional reason input. Closed windows render as a status badge
+  only.
+- **Admin review queue** at `/admin/claims`
+  ([`src/app/admin/claims/page.tsx`](../src/app/admin/claims/page.tsx)
+  + [`src/components/AdminClaimsConsole.tsx`](../src/components/AdminClaimsConsole.tsx)):
+  server component gates on `requireFounderSession()` (404 fail-closed,
+  identical to the existing dashboard route). The client island lists
+  reviews from local persistence, surfaces approve / reject /
+  needs-review buttons, and records the decision through
+  `claimReviewService.recordAdminDecision` with the founder email as
+  `decidedBy`.
+- **Shared copy** in
+  [`src/lib/copy/returnTrust.ts`](../src/lib/copy/returnTrust.ts):
+  extended `CLAIM_WINDOW_COPY` with action labels + a
+  `noPayoutNote` disclaimer. New `CLAIM_REVIEW_COPY` group covers the
+  admin queue's title, hint, decision labels, and status labels. Copy
+  tests scan the new strings against the regulated-language
+  deny-list.
+
+**What is intentionally NOT implemented:**
+
+- **No payment, no deposit forfeiture, no refund, no escrow, no
+  settlement payout, no Toss/PG integration.** Recording any decision
+  emits a TrustEvent and updates state — nothing more.
+- **No automatic dispute routing, no automatic damage judgment, no
+  legal adjudication.** A claim opens a review row; an admin must
+  make every decision by hand.
+- **No notifications.** Email, push, or webhook delivery is out of
+  scope.
+- **No automatic block / limit.** `accountStanding` is still
+  manual-only and unchanged by any decision recorded here.
+- **No state machine changes.** `rentalIntentMachine.ts` is
+  untouched. The claim window remains a sibling concept.
+- **No real authentication.** The seller path still resolves the mock
+  seller via `getMockSellerSession()`. The admin path is still gated
+  by the existing `requireFounderSession()` allowlist.
+- **No new dependencies.**
+
 ### Phase 2 — later PR (gated by review)
 
 - Wire the Return Ritual checklist into the rental flow (pickup

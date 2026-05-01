@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { RentalIntentStatus } from "@/domain/intents";
 import {
   APPROVAL_COPY,
+  CLAIM_REVIEW_COPY,
   CLAIM_WINDOW_COPY,
   HANDOFF_RITUAL_COPY,
   LISTING_CARD_COPY,
@@ -180,6 +181,38 @@ describe("TRUST_SUMMARY_COPY", () => {
 
   it("avoids forbidden regulated-language tokens", () => {
     const all = Object.values(TRUST_SUMMARY_COPY).join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+  });
+});
+
+describe("CLAIM_WINDOW_COPY", () => {
+  it("contains the documented action labels", () => {
+    expect(CLAIM_WINDOW_COPY.closeNoClaimAction).toBe("정상 반납으로 마무리");
+    expect(CLAIM_WINDOW_COPY.openClaimAction).toBe("상태 문제 보고");
+    expect(CLAIM_WINDOW_COPY.sectionTitle).toBe("반납 후 상태 확인");
+  });
+  it("explicitly disclaims any payout/settlement coupling", () => {
+    expect(CLAIM_WINDOW_COPY.noPayoutNote).toBe(
+      "결제·정산 처리는 아직 연결되어 있지 않아요.",
+    );
+  });
+});
+
+describe("CLAIM_REVIEW_COPY", () => {
+  it("contains the documented decision and status labels", () => {
+    expect(CLAIM_REVIEW_COPY.pageTitle).toBe("관리자 검토 큐");
+    expect(CLAIM_REVIEW_COPY.statusOpen).toBe("검토 대기");
+    expect(CLAIM_REVIEW_COPY.statusApproved).toBe("승인");
+    expect(CLAIM_REVIEW_COPY.statusRejected).toBe("반려");
+    expect(CLAIM_REVIEW_COPY.statusNeedsReview).toBe("추가 검토 필요");
+    expect(CLAIM_REVIEW_COPY.decisionApproveAction).toBe("승인");
+    expect(CLAIM_REVIEW_COPY.decisionRejectAction).toBe("반려");
+    expect(CLAIM_REVIEW_COPY.decisionNeedsReviewAction).toBe("추가 검토");
+  });
+  it("avoids forbidden regulated-language tokens", () => {
+    const all = Object.values(CLAIM_REVIEW_COPY).join(" ");
     for (const t of FORBIDDEN_TOKENS) {
       expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
     }
