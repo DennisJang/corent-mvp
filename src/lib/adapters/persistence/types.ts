@@ -8,6 +8,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { SellerProfileOverride } from "@/domain/sellers";
 import type {
   ClaimReview,
   ClaimWindow,
@@ -72,6 +73,16 @@ export interface PersistenceAdapter {
   getClaimReview(id: string): Promise<ClaimReview | null>;
   listClaimReviewsForRental(rentalIntentId: string): Promise<ClaimReview[]>;
   listClaimReviews(): Promise<ClaimReview[]>;
+
+  // SellerProfileOverride — at most one override per seller. Save is
+  // upsert by `sellerId`. The static SELLERS fixture is never mutated;
+  // overrides live entirely in this collection. See
+  // docs/corent_return_trust_layer.md §"Phase 1.9".
+  saveSellerProfileOverride(override: SellerProfileOverride): Promise<void>;
+  getSellerProfileOverride(
+    sellerId: string,
+  ): Promise<SellerProfileOverride | null>;
+  listSellerProfileOverrides(): Promise<SellerProfileOverride[]>;
 
   // Wipe all CoRent-MVP-owned data. Used by the dashboard's "로컬 데이터
   // 비우기" affordance and by tests that need a clean slate.

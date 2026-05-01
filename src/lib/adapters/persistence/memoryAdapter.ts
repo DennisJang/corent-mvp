@@ -7,6 +7,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { SellerProfileOverride } from "@/domain/sellers";
 import type {
   ClaimReview,
   ClaimWindow,
@@ -32,6 +33,7 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected trustEvents = new Map<string, TrustEvent>();
   protected claimWindows = new Map<string, ClaimWindow>();
   protected claimReviews = new Map<string, ClaimReview>();
+  protected sellerProfileOverrides = new Map<string, SellerProfileOverride>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
     this.rentalIntents.set(intent.id, intent);
@@ -144,6 +146,20 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     return Array.from(this.claimReviews.values());
   }
 
+  async saveSellerProfileOverride(
+    override: SellerProfileOverride,
+  ): Promise<void> {
+    this.sellerProfileOverrides.set(override.sellerId, override);
+  }
+  async getSellerProfileOverride(
+    sellerId: string,
+  ): Promise<SellerProfileOverride | null> {
+    return this.sellerProfileOverrides.get(sellerId) ?? null;
+  }
+  async listSellerProfileOverrides(): Promise<SellerProfileOverride[]> {
+    return Array.from(this.sellerProfileOverrides.values());
+  }
+
   async clearAll(): Promise<void> {
     this.rentalIntents.clear();
     this.listingIntents.clear();
@@ -153,5 +169,6 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     this.trustEvents.clear();
     this.claimWindows.clear();
     this.claimReviews.clear();
+    this.sellerProfileOverrides.clear();
   }
 }

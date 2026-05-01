@@ -19,6 +19,7 @@
 
 import { Badge } from "@/components/Badge";
 import { ProductCard } from "@/components/ProductCard";
+import { SellerStorefrontProfileOverlay } from "@/components/SellerStorefrontProfileOverlay";
 import { SellerStorefrontTrustBlock } from "@/components/SellerStorefrontTrustBlock";
 import { STOREFRONT_COPY } from "@/lib/copy/returnTrust";
 import type { StorefrontView } from "@/lib/services/storefrontService";
@@ -42,11 +43,13 @@ export function SellerStorefront({ view }: { view: StorefrontView }) {
             <span className="text-caption text-[color:var(--ink-60)]">
               {STOREFRONT_COPY.introTitle}
             </span>
-            <h1 className="text-h1">{seller.name}</h1>
+            <SellerStorefrontProfileOverlay
+              sellerId={seller.id}
+              fallbackName={seller.name}
+              fallbackIntro={intro}
+              enabled={!isFallback}
+            />
           </div>
-          <p className="text-body text-[color:var(--ink-80)] max-w-[640px]">
-            {intro}
-          </p>
           {isFallback ? (
             <div className="flex flex-col gap-2 border border-dashed border-[color:var(--line-dashed)] px-4 py-3">
               <Badge variant="dashed">{STOREFRONT_COPY.fallbackTag}</Badge>

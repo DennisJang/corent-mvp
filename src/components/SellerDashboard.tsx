@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { SellerDashboardStat } from "@/components/SellerDashboardStat";
+import { SellerProfileEditCard } from "@/components/SellerProfileEditCard";
 import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatusBadge";
 import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
@@ -552,6 +553,16 @@ export function SellerDashboard() {
           </div>
         </section>
       ) : null}
+
+      <section className="border-b border-black">
+        <div className="container-dashboard py-12">
+          <SellerProfileEditCard
+            sellerId={session.sellerId}
+            fallbackName={CURRENT_SELLER.name}
+            fallbackIntro={CURRENT_SELLER.trustNote}
+          />
+        </div>
+      </section>
 
       {handoffRows.length > 0 ? (
         <section className="border-b border-black">

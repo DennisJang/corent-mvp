@@ -10,6 +10,7 @@ import {
 } from "@/domain/intents";
 import type { ItemCondition } from "@/domain/products";
 import { mockAIParser } from "@/lib/adapters/ai/mockAIParserAdapter";
+import { assertListingOwnedBy } from "@/lib/auth/guards";
 import { getPersistence } from "@/lib/adapters/persistence";
 import { generateId, nowIso } from "@/lib/ids";
 import { calculateRecommendedPriceTable } from "@/lib/pricing";
@@ -206,5 +207,57 @@ export const listingService = {
 
   async list(): Promise<ListingIntent[]> {
     return getPersistence().listListingIntents();
+  },
+
+  // Phase 1.9: actor-aware seller-owned write for persisted listing
+  // drafts. Reloads the canonical persisted listing by id, runs
+  // `assertListingOwnedBy` against the canonical `sellerId`, applies
+  // only safe fields via `applyEdits`, validates the result, and
+  // persists the canonical record.
+  //
+  // Hard rules:
+  //   - The caller-supplied `actorSellerId` is the only authorization
+  //     signal. The patch never includes `sellerId`, `id`, `status`,
+  //     `verification`, `createdAt`, or `updatedAt` — those are domain
+  //     fields owned by the listing lifecycle, not seller edits.
+  //   - The static PRODUCTS / legacy LISTED_ITEMS arrays are never
+  //     mutated by this method; the surface that exposes the edit
+  //     button must filter to persisted ListingIntent rows only.
+  //   - Status changes (e.g. `human_review_pending → approved`) are
+  //     out of scope here. Only the `applyEdits` patch shape is
+  //     accepted; status is preserved from the canonical record.
+  //
+  // Throws:
+  //   - Error("listing_not_found") when the id has no persisted record.
+  //   - OwnershipError when `actorSellerId` does not own the listing.
+  //   - ListingInputError when the merged result fails validation.
+  async updateOwnListingDraft(
+    listingId: string,
+    actorSellerId: string,
+    patch: Parameters<typeof this.applyEdits>[1],
+  ): Promise<ListingIntent> {
+    if (typeof listingId !== "string" || listingId.length === 0) {
+      throw new Error("listing_not_found");
+    }
+    const persistence = getPersistence();
+    const canonical = await persistence.getListingIntent(listingId);
+    if (!canonical) throw new Error("listing_not_found");
+    // Ownership runs against the CANONICAL sellerId. A forged patch
+    // that supplies a different sellerId is silently dropped because
+    // `applyEdits` does not accept a `sellerId` field.
+    assertListingOwnedBy(canonical, actorSellerId);
+    const merged = listingService.applyEdits(canonical, patch);
+    // Preserve canonical id/sellerId/status/createdAt — `applyEdits`
+    // already does, but the explicit copy below documents the contract.
+    const next: ListingIntent = {
+      ...merged,
+      id: canonical.id,
+      sellerId: canonical.sellerId,
+      status: canonical.status,
+      createdAt: canonical.createdAt,
+    };
+    validateListingDraft(next);
+    await persistence.saveListingIntent(next);
+    return next;
   },
 };

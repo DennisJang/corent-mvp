@@ -6,6 +6,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { SellerProfileOverride } from "@/domain/sellers";
 import type {
   ClaimReview,
   ClaimWindow,
@@ -196,6 +197,13 @@ const baseClaimReview: ClaimReview = {
   openedReason: "본체에 새로운 흠집이 보여요",
 };
 
+const baseProfileOverride: SellerProfileOverride = {
+  sellerId: "seller_test",
+  displayName: "지수 (베타)",
+  publicNote: "주말 픽업 위주로 운영해요.",
+  updatedAt: "2026-04-29T00:09:00.000Z",
+};
+
 function makeRentalIntent(overrides: Partial<RentalIntent> = {}): RentalIntent {
   return {
     ...baseRentalIntent,
@@ -320,6 +328,7 @@ describe("MemoryPersistenceAdapter", () => {
     await adapter.saveTrustEvent(basePickupTrustEvent);
     await adapter.saveClaimWindow(baseClaimWindow);
     await adapter.saveClaimReview(baseClaimReview);
+    await adapter.saveSellerProfileOverride(baseProfileOverride);
     await adapter.clearAll();
 
     expect(await adapter.listRentalIntents()).toEqual([]);
@@ -345,6 +354,48 @@ describe("MemoryPersistenceAdapter", () => {
     expect(
       await adapter.listClaimReviewsForRental(baseRentalIntent.id),
     ).toEqual([]);
+    expect(await adapter.listSellerProfileOverrides()).toEqual([]);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toBeNull();
+  });
+
+  it("saves, reads, and upserts seller profile overrides by sellerId", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toBeNull();
+    expect(await adapter.listSellerProfileOverrides()).toEqual([]);
+
+    await adapter.saveSellerProfileOverride(baseProfileOverride);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toEqual(baseProfileOverride);
+    expect(await adapter.listSellerProfileOverrides()).toEqual([
+      baseProfileOverride,
+    ]);
+
+    // Re-saving the same sellerId upserts instead of duplicating.
+    const renamed: SellerProfileOverride = {
+      ...baseProfileOverride,
+      displayName: "지수 (renamed)",
+      updatedAt: "2026-04-29T01:00:00.000Z",
+    };
+    await adapter.saveSellerProfileOverride(renamed);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toEqual(renamed);
+    expect(await adapter.listSellerProfileOverrides()).toHaveLength(1);
+
+    // A second seller's override is independent.
+    const otherOverride: SellerProfileOverride = {
+      sellerId: "seller_other",
+      displayName: "민호",
+      updatedAt: "2026-04-29T01:01:00.000Z",
+    };
+    await adapter.saveSellerProfileOverride(otherOverride);
+    expect(await adapter.listSellerProfileOverrides()).toHaveLength(2);
   });
 
   it("saves and reads claim windows scoped per rental", async () => {
@@ -605,6 +656,9 @@ describe("LocalStoragePersistenceAdapter", () => {
       "corent:claimReviews": JSON.stringify({
         [baseClaimReview.id]: baseClaimReview,
       }),
+      "corent:sellerProfileOverrides": JSON.stringify({
+        [baseProfileOverride.sellerId]: baseProfileOverride,
+      }),
       unrelated: "keep me",
     });
     const adapter = new LocalStoragePersistenceAdapter();
@@ -634,6 +688,39 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(
       await adapter.listClaimReviewsForRental(baseRentalIntent.id),
     ).toEqual([]);
+    expect(await adapter.listSellerProfileOverrides()).toEqual([]);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toBeNull();
+  });
+
+  it("saves, reads, and upserts seller profile overrides", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toBeNull();
+    expect(await adapter.listSellerProfileOverrides()).toEqual([]);
+
+    await adapter.saveSellerProfileOverride(baseProfileOverride);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toEqual(baseProfileOverride);
+    expect(await adapter.listSellerProfileOverrides()).toEqual([
+      baseProfileOverride,
+    ]);
+
+    const renamed: SellerProfileOverride = {
+      ...baseProfileOverride,
+      displayName: "지수 (renamed)",
+      updatedAt: "2026-04-29T01:00:00.000Z",
+    };
+    await adapter.saveSellerProfileOverride(renamed);
+    expect(
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId),
+    ).toEqual(renamed);
+    expect(await adapter.listSellerProfileOverrides()).toHaveLength(1);
   });
 
   it("saves and reads claim windows + claim reviews", async () => {

@@ -9,6 +9,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
+import type { SellerProfileOverride } from "@/domain/sellers";
 import type {
   ClaimReview,
   ClaimWindow,
@@ -27,6 +28,7 @@ const KEYS = {
   trustEvents: "corent:trustEvents",
   claimWindows: "corent:claimWindows",
   claimReviews: "corent:claimReviews",
+  sellerProfileOverrides: "corent:sellerProfileOverrides",
 } as const;
 
 // Composite key inside the handoff blob: `${rentalIntentId}:${phase}`.
@@ -213,6 +215,33 @@ export class LocalStoragePersistenceAdapter implements PersistenceAdapter {
   }
   async listClaimReviews(): Promise<ClaimReview[]> {
     const all = readJson<Record<string, ClaimReview>>(KEYS.claimReviews, {});
+    return Object.values(all);
+  }
+
+  async saveSellerProfileOverride(
+    override: SellerProfileOverride,
+  ): Promise<void> {
+    const all = readJson<Record<string, SellerProfileOverride>>(
+      KEYS.sellerProfileOverrides,
+      {},
+    );
+    all[override.sellerId] = override;
+    writeJson(KEYS.sellerProfileOverrides, all);
+  }
+  async getSellerProfileOverride(
+    sellerId: string,
+  ): Promise<SellerProfileOverride | null> {
+    const all = readJson<Record<string, SellerProfileOverride>>(
+      KEYS.sellerProfileOverrides,
+      {},
+    );
+    return all[sellerId] ?? null;
+  }
+  async listSellerProfileOverrides(): Promise<SellerProfileOverride[]> {
+    const all = readJson<Record<string, SellerProfileOverride>>(
+      KEYS.sellerProfileOverrides,
+      {},
+    );
     return Object.values(all);
   }
 
