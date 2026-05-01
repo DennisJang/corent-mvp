@@ -15,6 +15,7 @@ import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
 import {
   EMPTY_USER_TRUST_SUMMARY,
+  hasVisibleTrustHistory,
   type ClaimWindow,
   type HandoffPhase,
   type HandoffRecord,
@@ -85,7 +86,7 @@ export function SellerDashboard() {
   // the "다음 단계 진행 →" affordance when the gate would reject the
   // call. Absent entry = no block.
   const [settlementBlockByRental, setSettlementBlockByRental] = useState<
-    Map<string, "claim_window_open" | "claim_review_unresolved">
+    Map<string, "claim_window_open" | "claim_review_missing" | "claim_review_unresolved">
   >(() => new Map());
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
@@ -126,7 +127,7 @@ export function SellerDashboard() {
     const claimByRental = new Map<string, ClaimWindow>();
     const blockByRental = new Map<
       string,
-      "claim_window_open" | "claim_review_unresolved"
+      "claim_window_open" | "claim_review_missing" | "claim_review_unresolved"
     >();
     for (const rental of r) {
       if (rental.sellerId !== CURRENT_SELLER.id) continue;
@@ -188,15 +189,14 @@ export function SellerDashboard() {
     [effectiveRentals],
   );
 
+  // Visibility logic uses `hasVisibleTrustHistory` from
+  // `@/domain/trust` so the dashboard and the public storefront cannot
+  // drift on what counts as "trust history exists". Hidden metrics
+  // (`disputesOpened`, `damageReportsAgainst`) are excluded so the
+  // section never appears with all-zero visible tiles just because of
+  // a hidden count.
   const trustSummaryHasContent = useMemo(
-    () =>
-      trustSummary.successfulReturns +
-        trustSummary.pickupConfirmedCount +
-        trustSummary.returnConfirmedCount +
-        trustSummary.conditionCheckCompletedCount +
-        trustSummary.disputesOpened +
-        trustSummary.damageReportsAgainst >
-      0,
+    () => hasVisibleTrustHistory(trustSummary),
     [trustSummary],
   );
 
@@ -738,7 +738,7 @@ function ActiveBlock({
   onAdvance: (r: RentalIntent) => void;
   settlementBlockByRental: Map<
     string,
-    "claim_window_open" | "claim_review_unresolved"
+    "claim_window_open" | "claim_review_missing" | "claim_review_unresolved"
   >;
 }) {
   return (

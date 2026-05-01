@@ -603,4 +603,67 @@ describe("rentalService — settlement is gated by the claim window", () => {
     );
     expect(await rentalService.settlementBlockReason(r.id)).toBeNull();
   });
+
+  // --------------------------------------------------------------
+  // Phase 1.8 fail-closed guard. A `closed_with_claim` window with no
+  // persisted review row (partial-persist scenario) must NOT let
+  // settlement proceed silently.
+  // --------------------------------------------------------------
+
+  it("readySettlement is BLOCKED when window is closed_with_claim but no review exists", async () => {
+    const r = await makeReturnConfirmedRental();
+    const persistence = getPersistence();
+    // Simulate a partial persist: the claim window closed with claim,
+    // but the review row never landed in storage.
+    const window = await persistence.getClaimWindowForRental(r.id);
+    expect(window?.status).toBe("open");
+    await persistence.saveClaimWindow({
+      ...window!,
+      status: "closed_with_claim",
+      closedAt: "2026-04-29T01:00:00.000Z",
+      closeReason: "partial",
+    });
+    const reasonBefore = await rentalService.settlementBlockReason(r.id);
+    expect(reasonBefore).toBe("claim_review_missing");
+    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+      /settlement_blocked: claim_review_missing/,
+    );
+  });
+
+  it("settle is BLOCKED for closed_with_claim with no review, even if readySettlement is skipped", async () => {
+    const r = await makeReturnConfirmedRental();
+    const persistence = getPersistence();
+    const window = await persistence.getClaimWindowForRental(r.id);
+    await persistence.saveClaimWindow({
+      ...window!,
+      status: "closed_with_claim",
+      closedAt: "2026-04-29T01:00:00.000Z",
+    });
+    await expect(rentalService.settle(r)).rejects.toThrow(
+      /settlement_blocked: claim_review_missing/,
+    );
+  });
+});
+
+// --------------------------------------------------------------
+// Phase 1.8 — issue signals from the damage helper. The chaos
+// `rentalService.damage` helper now also emits a
+// `condition_issue_reported` trust event so the trust summary's
+// `damageReportsAgainst` counter cannot stay at zero when the rental
+// has actually moved into `damage_reported`.
+// --------------------------------------------------------------
+
+describe("rentalService.damage emits condition_issue_reported", () => {
+  it("increments damageReportsAgainst on the seller summary", async () => {
+    let r = await makeReturnPendingRental();
+    r = await rentalService.damage(r);
+    expect(r.status).toBe("damage_reported");
+    const { trustEventService } = await import("./trustEvents");
+    const summary = await trustEventService.summarizeUserTrust(SELLER_ID);
+    expect(summary.damageReportsAgainst).toBe(1);
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(
+      events.filter((e) => e.type === "condition_issue_reported"),
+    ).toHaveLength(1);
+  });
 });

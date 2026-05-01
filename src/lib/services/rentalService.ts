@@ -126,9 +126,12 @@ function assertHandoffPhaseAllowed(
 // Settlement gate. Returns null if settlement may proceed; throws
 // otherwise. Settlement is blocked while:
 //   - the post-return claim window is still `open`, or
-//   - the window is `closed_with_claim` and the corresponding
-//     `ClaimReview` has not reached a final decision (`approved` or
-//     `rejected`). `needs_review` and `open` count as unresolved.
+//   - the window is `closed_with_claim` and NO `ClaimReview` exists
+//     yet (partial-persist guard — fail closed), or
+//   - the window is `closed_with_claim` and at least one review is
+//     `open` or `needs_review`. Only when EVERY review on the rental
+//     has reached a final decision (`approved` or `rejected`) does
+//     settlement become available.
 //
 // A rental that has no claim window at all (legacy / unusual paths)
 // is allowed to proceed — the gate exists to prevent settlement from
@@ -137,23 +140,38 @@ function assertHandoffPhaseAllowed(
 async function assertSettlementNotBlockedByClaim(
   rentalIntentId: string,
 ): Promise<void> {
+  const reason = await computeSettlementBlockReason(rentalIntentId);
+  if (reason) throw new Error(`settlement_blocked: ${reason}`);
+}
+
+type SettlementBlockReason =
+  | "claim_window_open"
+  | "claim_review_missing"
+  | "claim_review_unresolved";
+
+async function computeSettlementBlockReason(
+  rentalIntentId: string,
+): Promise<SettlementBlockReason | null> {
   const window = await claimReviewService.getClaimWindowForRental(
     rentalIntentId,
   );
-  if (!window) return;
-  if (window.status === "open") {
-    throw new Error("settlement_blocked: claim_window_open");
-  }
-  if (window.status === "closed_no_claim") return;
-  // closed_with_claim → require a final review decision.
+  if (!window) return null;
+  if (window.status === "open") return "claim_window_open";
+  if (window.status === "closed_no_claim") return null;
+  // closed_with_claim → require a persisted, finalized review.
   const reviews =
     await claimReviewService.listClaimReviewsForRental(rentalIntentId);
+  if (reviews.length === 0) {
+    // The window says a claim was filed but no review row exists —
+    // fail closed so a partial persist on `openClaim` cannot let
+    // settlement slip through.
+    return "claim_review_missing";
+  }
   const unresolved = reviews.find(
     (r) => r.status === "open" || r.status === "needs_review",
   );
-  if (unresolved) {
-    throw new Error("settlement_blocked: claim_review_unresolved");
-  }
+  if (unresolved) return "claim_review_unresolved";
+  return null;
 }
 
 export const rentalService = {
@@ -390,20 +408,8 @@ export const rentalService = {
   // without trying-and-catching the actual transition.
   async settlementBlockReason(
     rentalIntentId: string,
-  ): Promise<"claim_window_open" | "claim_review_unresolved" | null> {
-    const window = await claimReviewService.getClaimWindowForRental(
-      rentalIntentId,
-    );
-    if (!window) return null;
-    if (window.status === "open") return "claim_window_open";
-    if (window.status === "closed_no_claim") return null;
-    const reviews =
-      await claimReviewService.listClaimReviewsForRental(rentalIntentId);
-    const unresolved = reviews.find(
-      (r) => r.status === "open" || r.status === "needs_review",
-    );
-    if (unresolved) return "claim_review_unresolved";
-    return null;
+  ): Promise<SettlementBlockReason | null> {
+    return computeSettlementBlockReason(rentalIntentId);
   },
 
   // Legacy: trusts the caller. New code must use `declineRequest`
@@ -446,7 +452,18 @@ export const rentalService = {
     const canonical = await loadCanonical(intent);
     const r = reportDamage(canonical);
     if (!r.ok) throw new Error(r.message);
-    return persistAndEmit(r);
+    const next = await persistAndEmit(r);
+    // Phase 1.8: align the damage-state transition with the
+    // `condition_issue_reported` trust event so `damageReportsAgainst`
+    // reflects flows that bypass the claim window (chaos/dev tools or
+    // a future direct damage report path).
+    await trustEventService.recordTrustEvent({
+      rentalIntentId: next.id,
+      type: "condition_issue_reported",
+      actor: "seller",
+      handoffPhase: "return",
+    });
+    return next;
   },
   async dispute(intent: IntentLike, reason?: string): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);

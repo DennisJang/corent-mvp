@@ -326,6 +326,32 @@ export const EMPTY_USER_TRUST_SUMMARY: Omit<UserTrustSummary, "userId"> = {
   accountStanding: "normal",
 };
 
+// Visibility rule (Phase 1.8): both the seller dashboard and the
+// public storefront render only the four success-side tiles
+// (`successfulReturns`, `pickupConfirmedCount`, `returnConfirmedCount`,
+// `conditionCheckCompletedCount`). They MUST share a single rule for
+// "is the trust history block worth showing?" — using hidden metrics
+// (`disputesOpened`, `damageReportsAgainst`) to decide visibility
+// would render an all-zero block for visitors. The helper below is
+// the single source of truth.
+export function hasVisibleTrustHistory(
+  summary: Pick<
+    UserTrustSummary,
+    | "successfulReturns"
+    | "pickupConfirmedCount"
+    | "returnConfirmedCount"
+    | "conditionCheckCompletedCount"
+  >,
+): boolean {
+  return (
+    summary.successfulReturns +
+      summary.pickupConfirmedCount +
+      summary.returnConfirmedCount +
+      summary.conditionCheckCompletedCount >
+    0
+  );
+}
+
 // --------------------------------------------------------------
 // Re-export RentalIntentStatus so callers can write
 // `import { type RentalIntentStatus } from "@/domain/trust";` when

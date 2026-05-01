@@ -14,6 +14,7 @@
 import { useEffect, useState } from "react";
 import {
   EMPTY_USER_TRUST_SUMMARY,
+  hasVisibleTrustHistory,
   type UserTrustSummary,
 } from "@/domain/trust";
 import { trustEventService } from "@/lib/services/trustEvents";
@@ -45,13 +46,12 @@ export function SellerStorefrontTrustBlock({
     };
   }, [sellerId]);
 
-  const total =
-    summary.successfulReturns +
-    summary.pickupConfirmedCount +
-    summary.returnConfirmedCount +
-    summary.conditionCheckCompletedCount;
+  // Same visibility rule as the seller dashboard. `accountStanding` is
+  // intentionally NOT surfaced on the public storefront, so the block
+  // shows the empty fallback whenever no visible-tile counts exist.
+  const visible = hasVisibleTrustHistory(summary);
 
-  if (loaded && total === 0) {
+  if (loaded && !visible) {
     return (
       <section
         aria-label={STOREFRONT_COPY.trustHeading}

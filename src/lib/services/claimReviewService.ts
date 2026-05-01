@@ -166,16 +166,47 @@ export const claimReviewService = {
   // BEFORE any persistence write. Idempotent: a re-call on an
   // already-closed window throws `window_already_closed` so the UI
   // can surface a clear message rather than silently succeeding.
+  //
+  // Trust-summary alignment (Phase 1.8): a clean close is the
+  // canonical "successful return" moment. Emits two additional
+  // TrustEvents on top of `claim_window_closed`:
+  //   - `return_confirmed_by_seller` → `successfulReturns += 1`
+  //   - `condition_match_recorded`   → `conditionCheckCompletedCount += 1`
+  // These are emitted exactly once per clean close because
+  // `finalizeWindow` rejects re-closing an already-closed window.
   async closeClaimWindowAsNoClaim(
     rentalIntentId: string,
     actorUserId: string,
   ): Promise<ClaimWindow> {
-    return finalizeWindow(rentalIntentId, actorUserId, "closed_no_claim");
+    const window = await finalizeWindow(
+      rentalIntentId,
+      actorUserId,
+      "closed_no_claim",
+    );
+    await trustEventService.recordTrustEvent({
+      rentalIntentId,
+      type: "return_confirmed_by_seller",
+      actor: "seller",
+    });
+    await trustEventService.recordTrustEvent({
+      rentalIntentId,
+      type: "condition_match_recorded",
+      actor: "seller",
+      handoffPhase: "return",
+    });
+    return window;
   },
 
   // Seller opens a claim. Closes the window as `closed_with_claim`,
-  // creates a `ClaimReview` row in `open` status, and emits a pair of
-  // TrustEvents (`claim_window_closed`, `admin_review_started`).
+  // creates a `ClaimReview` row in `open` status, and emits the
+  // related TrustEvents.
+  //
+  // Trust-summary alignment (Phase 1.8): a claim is a condition-issue
+  // signal against the rental's seller. The full trust-event burst is:
+  //   - `claim_window_closed` (emitted by `finalizeWindow`)
+  //   - `condition_issue_reported`  → `damageReportsAgainst += 1`
+  //                                   when the user is the seller
+  //   - `admin_review_started`      → `disputesOpened += 1`
   // The reason text is bounded; it is stored only — never auto-routed
   // into a notification, ticket, or external system.
   async openClaim(
@@ -200,6 +231,13 @@ export const claimReviewService = {
       openedReason: reason,
     };
     await persistence.saveClaimReview(review);
+    await trustEventService.recordTrustEvent({
+      rentalIntentId,
+      type: "condition_issue_reported",
+      actor: "seller",
+      handoffPhase: "return",
+      notes: reason,
+    });
     await trustEventService.recordTrustEvent({
       rentalIntentId,
       type: "admin_review_started",

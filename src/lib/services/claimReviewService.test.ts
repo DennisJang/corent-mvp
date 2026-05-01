@@ -308,3 +308,70 @@ describe("rentalService.confirmReturn integration", () => {
     expect(w?.status).toBe("open");
   });
 });
+
+// --------------------------------------------------------------
+// Trust-summary alignment (Phase 1.8).
+// --------------------------------------------------------------
+
+describe("clean no-claim close emits successful-return + condition-match events", () => {
+  it("increments visible summary counts on a clean close", async () => {
+    const r = await makeRentalAtReturnConfirmed();
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    const { trustEventService } = await import("./trustEvents");
+    const summary = await trustEventService.summarizeUserTrust(SELLER_ID);
+    expect(summary.successfulReturns).toBe(1);
+    expect(summary.conditionCheckCompletedCount).toBe(1);
+  });
+
+  it("emits exactly one return_confirmed_by_seller and one condition_match_recorded", async () => {
+    const r = await makeRentalAtReturnConfirmed();
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(
+      events.filter((e) => e.type === "return_confirmed_by_seller"),
+    ).toHaveLength(1);
+    expect(
+      events.filter((e) => e.type === "condition_match_recorded"),
+    ).toHaveLength(1);
+  });
+
+  it("does NOT emit clean-return events while the window is still open", async () => {
+    const r = await makeRentalAtReturnConfirmed();
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(
+      events.filter((e) => e.type === "return_confirmed_by_seller"),
+    ).toHaveLength(0);
+    expect(
+      events.filter((e) => e.type === "condition_match_recorded"),
+    ).toHaveLength(0);
+  });
+
+  it("re-closing a closed window does NOT duplicate clean-return events", async () => {
+    const r = await makeRentalAtReturnConfirmed();
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    await expect(
+      claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID),
+    ).rejects.toBeInstanceOf(ClaimReviewInputError);
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(
+      events.filter((e) => e.type === "return_confirmed_by_seller"),
+    ).toHaveLength(1);
+    expect(
+      events.filter((e) => e.type === "condition_match_recorded"),
+    ).toHaveLength(1);
+  });
+});
+
+describe("openClaim emits condition_issue_reported alongside admin_review_started", () => {
+  it("increments damageReportsAgainst (seller) and disputesOpened", async () => {
+    const r = await makeRentalAtReturnConfirmed();
+    await claimReviewService.openClaim(r.id, SELLER_ID, "흠집");
+    const { trustEventService } = await import("./trustEvents");
+    const summary = await trustEventService.summarizeUserTrust(SELLER_ID);
+    expect(summary.damageReportsAgainst).toBe(1);
+    expect(summary.disputesOpened).toBe(1);
+    // The clean-return counts must NOT increment when a claim is filed.
+    expect(summary.successfulReturns).toBe(0);
+    expect(summary.conditionCheckCompletedCount).toBe(0);
+  });
+});
