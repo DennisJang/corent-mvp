@@ -4,8 +4,22 @@
 //
 // The seller types one description; the deterministic local extractor
 // (no AI / network) produces a structured draft summary. A second
-// click ("초안으로 저장") creates a private ListingIntent draft via
-// `chatListingIntakeService.createListingDraftFromIntake`.
+// click ("초안으로 저장") creates a private ListingIntent draft.
+//
+// Client-adapter boundary:
+//
+//   - The component calls the chat intake client adapter
+//     (`@/lib/client/chatIntakeClient`), never the server actions
+//     directly and never the underlying service with a hand-passed
+//     `actorSellerId`.
+//   - In current local-demo mode the adapter routes writes through
+//     the browser-local `chatListingIntakeService` so the dashboard
+//     (which reads browser localStorage) actually sees the new
+//     draft. The server actions in `@/server/intake/actions` remain
+//     present and tested as the future shared-server boundary; the
+//     adapter is the single seam where that mode flip happens.
+//   - Result shape is `IntentResult<T>`; the component branches on
+//     `code` to render Korean copy.
 //
 // What this surface DOES NOT do:
 //
@@ -25,23 +39,41 @@ import type {
   IntakeSession,
 } from "@/domain/intake";
 import type { ListingIntent } from "@/domain/intents";
-import { OwnershipError } from "@/lib/auth/guards";
 import {
-  ChatIntakeInputError,
-  chatListingIntakeService,
-} from "@/lib/services/chatListingIntakeService";
+  appendSellerMessage,
+  createListingDraft,
+  startIntakeSession,
+  type IntentErrorCode,
+} from "@/lib/client/chatIntakeClient";
 
 const SELLER_INPUT_MAX = 2000;
 
 type Props = {
-  sellerId: string;
   // Notify the parent when a new draft is created so the listings
   // table on the dashboard can re-load. The parent passes its own
   // `refresh` here.
   onDraftCreated?: (listing: ListingIntent) => void;
 };
 
-export function ChatToListingIntakeCard({ sellerId, onDraftCreated }: Props) {
+function intakeErrorToToast(code: IntentErrorCode): string {
+  switch (code) {
+    case "input":
+      return "내용을 다시 확인해 주세요.";
+    case "ownership":
+      return "이 세션을 편집할 권한이 없어요.";
+    case "not_found":
+      return "세션을 찾을 수 없어요.";
+    case "conflict":
+      return "이 세션은 더 이상 입력을 받지 않아요.";
+    case "unauthenticated":
+      return "로그인이 필요해요.";
+    case "internal":
+    default:
+      return "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.";
+  }
+}
+
+export function ChatToListingIntakeCard({ onDraftCreated }: Props) {
   const [session, setSession] = useState<IntakeSession | null>(null);
   const [messages, setMessages] = useState<IntakeMessage[]>([]);
   const [extraction, setExtraction] = useState<IntakeExtraction | null>(null);
@@ -59,32 +91,27 @@ export function ChatToListingIntakeCard({ sellerId, onDraftCreated }: Props) {
     try {
       let active = session;
       if (!active) {
-        active = await chatListingIntakeService.startSession(sellerId);
+        const start = await startIntakeSession();
+        if (!start.ok) {
+          setToast(intakeErrorToToast(start.code));
+          return;
+        }
+        active = start.value.session;
         setSession(active);
       }
-      const result = await chatListingIntakeService.appendSellerMessage(
-        active.id,
-        sellerId,
-        text,
-      );
-      setSession(result.session);
-      setMessages((prev) => [...prev, result.sellerMessage, result.assistantMessage]);
-      setExtraction(result.extraction);
-      setText("");
-    } catch (e) {
-      if (e instanceof ChatIntakeInputError) {
-        setToast(
-          e.code === "message_empty"
-            ? "내용을 입력해 주세요."
-            : e.code === "message_too_long"
-              ? "내용이 너무 길어요. 줄여서 다시 시도해 주세요."
-              : "이 세션은 더 이상 입력을 받지 않아요.",
-        );
-      } else if (e instanceof OwnershipError) {
-        setToast("이 세션을 편집할 권한이 없어요.");
-      } else {
-        setToast("초안 미리보기를 만들지 못했어요.");
+      const result = await appendSellerMessage({
+        sessionId: active.id,
+        content: text,
+      });
+      if (!result.ok) {
+        setToast(intakeErrorToToast(result.code));
+        return;
       }
+      const value = result.value;
+      setSession(value.session);
+      setMessages((prev) => [...prev, value.sellerMessage, value.assistantMessage]);
+      setExtraction(value.extraction);
+      setText("");
     } finally {
       setBusy(false);
     }
@@ -95,21 +122,18 @@ export function ChatToListingIntakeCard({ sellerId, onDraftCreated }: Props) {
     setBusy(true);
     setToast(null);
     try {
-      const { session: nextSession, listing } =
-        await chatListingIntakeService.createListingDraftFromIntake(
-          session.id,
-          sellerId,
-        );
+      const result = await createListingDraft({
+        sessionId: session.id,
+      });
+      if (!result.ok) {
+        setToast(intakeErrorToToast(result.code));
+        return;
+      }
+      const { session: nextSession, listing } = result.value;
       setSession(nextSession);
       setDraftListing(listing);
       setToast("리스팅 초안을 저장했어요. 공개 전 사람 검수가 필요해요.");
       onDraftCreated?.(listing);
-    } catch (e) {
-      if (e instanceof OwnershipError) {
-        setToast("이 세션을 편집할 권한이 없어요.");
-      } else {
-        setToast("초안을 저장하지 못했어요.");
-      }
     } finally {
       setBusy(false);
     }

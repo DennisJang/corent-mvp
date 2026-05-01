@@ -575,7 +575,6 @@ export function SellerDashboard() {
       <section className="border-b border-black">
         <div className="container-dashboard py-12">
           <ChatToListingIntakeCard
-            sellerId={session.sellerId}
             onDraftCreated={() => {
               void refresh();
             }}
