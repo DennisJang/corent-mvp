@@ -19,6 +19,7 @@ import {
 } from "@/domain/durations";
 import type { RentalIntent } from "@/domain/intents";
 import type { Product } from "@/domain/products";
+import { getMockRenterSession } from "@/lib/auth/mockSession";
 import { APPROVAL_COPY } from "@/lib/copy/returnTrust";
 import { formatKRW } from "@/lib/format";
 import { calculateRentalAmounts } from "@/lib/pricing";
@@ -40,36 +41,45 @@ export function ItemDetailClient({ product }: Props) {
     [rentalFee, product.estimatedValue],
   );
 
-  // Surface the most recent intent for this product if one exists in
-  // localStorage — useful when the user comes back to the page.
+  // Phase 1.11 — mock renter identity. Same posture as the seller
+  // mock session: NOT real auth. The renter id below is the only
+  // thing the request-creation boundary uses to scope ownership.
+  const renterSession = getMockRenterSession();
+
+  // Surface the most recent intent THIS visitor has sent for this
+  // product. Phase 1.11: scoped by `(productId, borrowerId)` so two
+  // local-MVP visitors sharing a browser don't read each other's
+  // requests.
   useEffect(() => {
     let active = true;
-    rentalService.list().then((all) => {
-      if (!active) return;
-      const mine = all
-        .filter((r) => r.productId === product.id)
-        .sort((a, b) => b.updatedAt.localeCompare(a.updatedAt))[0];
-      if (mine) setIntent(mine);
-    });
+    rentalService
+      .listMyRequestsForProduct(product.id, renterSession.borrowerId)
+      .then((mine) => {
+        if (!active) return;
+        const latest = [...mine].sort((a, b) =>
+          b.updatedAt.localeCompare(a.updatedAt),
+        )[0];
+        if (latest) setIntent(latest);
+      });
     return () => {
       active = false;
     };
-  }, [product.id]);
+  }, [product.id, renterSession.borrowerId]);
 
   const handleRequest = async () => {
     setSubmitting(true);
     setError(null);
     try {
-      const created = await rentalService.create({
+      // Canonical-request boundary: the client sends only the product
+      // id, the selected duration, and the local-MVP renter identity.
+      // Seller / product name / price / amounts / status / payment
+      // fields are resolved server-side from `getProductById` — a
+      // tampered client cannot smuggle a different value in.
+      const created = await rentalService.createRequestFromProductId({
         productId: product.id,
-        productName: product.name,
-        productCategory: product.category,
         durationDays: keyToDays(duration),
-        rentalFee,
-        estimatedValue: product.estimatedValue,
-        sellerId: product.sellerId,
-        sellerName: product.sellerName,
-        pickupLocationLabel: product.pickupArea,
+        actorBorrowerId: renterSession.borrowerId,
+        actorBorrowerName: renterSession.displayName,
       });
       setIntent(created);
     } catch (e) {
@@ -161,16 +171,29 @@ export function ItemDetailClient({ product }: Props) {
                 </ul>
 
                 <div className="flex flex-col gap-3">
+                  <div className="border border-dashed border-[color:var(--line-dashed)] px-4 py-3 flex flex-col gap-1">
+                    <span className="text-caption">
+                      {APPROVAL_COPY.requestOnlyTitle}
+                    </span>
+                    <span className="text-small text-[color:var(--ink-60)]">
+                      {APPROVAL_COPY.requestOnlyBody}
+                    </span>
+                  </div>
                   {intent ? (
                     <div className="border border-black p-4 flex flex-col gap-2">
-                      <span className="text-caption">요청이 접수되었어요</span>
+                      <span className="text-caption">
+                        {APPROVAL_COPY.requestReceived}
+                      </span>
                       <span className="text-body">
                         요청 ID: {intent.id} · {intent.durationDays}일 ·{" "}
-                        {formatKRW(intent.amounts.borrowerTotal)}
+                        {formatKRW(intent.amounts.borrowerTotal)} (참고용)
                       </span>
                       <span className="text-small text-[color:var(--ink-60)]">
                         {APPROVAL_COPY.notChargedYet}{" "}
                         {APPROVAL_COPY.awaitingSellerApproval}
+                      </span>
+                      <span className="text-small text-[color:var(--ink-60)]">
+                        {APPROVAL_COPY.renterMutationsDeferred}
                       </span>
                     </div>
                   ) : (
@@ -179,7 +202,9 @@ export function ItemDetailClient({ product }: Props) {
                       disabled={submitting}
                       type="button"
                     >
-                      {submitting ? "요청 보내는 중…" : "대여 요청하기"}
+                      {submitting
+                        ? APPROVAL_COPY.requestCtaSubmitting
+                        : APPROVAL_COPY.requestCtaIdle}
                     </Button>
                   )}
                   {error ? (

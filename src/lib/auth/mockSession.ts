@@ -53,3 +53,30 @@ export function getMockSellerSession(): MockSellerSession {
 export function _findMockSellerForTests(id: string): Seller | undefined {
   return SELLERS.find((s) => s.id === id);
 }
+
+// --------------------------------------------------------------
+// Mock renter session (Phase 1.11). Same posture as the seller
+// helper: NOT real auth. Local-MVP only. Item detail uses this to
+// scope rental requests so the most-recent-request restore is
+// keyed by `(productId, borrowerId)` rather than productId alone.
+// Real per-user authentication will replace this helper without
+// changing the call sites — the request-creation boundary already
+// takes `actorBorrowerId` as a parameter.
+// --------------------------------------------------------------
+
+export type MockRenterSession = {
+  borrowerId: string;
+  displayName: string;
+  source: "mock";
+};
+
+const MOCK_RENTER_ID = "borrower_local_mvp";
+const MOCK_RENTER_NAME = "테스터";
+
+export function getMockRenterSession(): MockRenterSession {
+  return {
+    borrowerId: MOCK_RENTER_ID,
+    displayName: MOCK_RENTER_NAME,
+    source: "mock",
+  };
+}

@@ -667,3 +667,156 @@ describe("rentalService.damage emits condition_issue_reported", () => {
     ).toHaveLength(1);
   });
 });
+
+// --------------------------------------------------------------
+// Phase 1.11 — canonical request creation from product id.
+//
+// The renter-facing item detail page only sends `(productId,
+// durationDays, actorBorrowerId?)`. Every other field — seller name,
+// product name, category, rental fee, estimated value, status,
+// payment, settlement — is resolved from the trusted static
+// `PRODUCTS` source. Forged caller-supplied seller / product / price /
+// status / payment / amount fields cannot reach persistence because
+// the helper does not accept those fields at all.
+// --------------------------------------------------------------
+
+describe("rentalService.createRequestFromProductId", () => {
+  it("creates a requested rental using ONLY canonical product fields", async () => {
+    const { PRODUCTS } = await import("@/data/products");
+    const product = PRODUCTS[0]!;
+    const renter = "borrower_renter_test";
+    const created = await rentalService.createRequestFromProductId({
+      productId: product.id,
+      durationDays: 3,
+      actorBorrowerId: renter,
+      actorBorrowerName: "테스터",
+    });
+    expect(created.status).toBe("requested");
+    // Every canonical field comes from the trusted product source.
+    expect(created.productId).toBe(product.id);
+    expect(created.productName).toBe(product.name);
+    expect(created.productCategory).toBe(product.category);
+    expect(created.sellerId).toBe(product.sellerId);
+    expect(created.sellerName).toBe(product.sellerName);
+    expect(created.amounts.rentalFee).toBe(product.prices["3d"]);
+    expect(created.borrowerId).toBe(renter);
+    expect(created.borrowerName).toBe("테스터");
+    expect(created.durationDays).toBe(3);
+    expect(created.payment.status).toBe("not_started");
+    expect(created.settlement.status).toBe("not_ready");
+  });
+
+  it("rejects unknown product ids", async () => {
+    await expect(
+      rentalService.createRequestFromProductId({
+        productId: "p_does_not_exist",
+        durationDays: 3,
+        actorBorrowerId: "borrower_test",
+      }),
+    ).rejects.toThrow(/product_not_found/);
+    expect(await rentalService.list()).toEqual([]);
+  });
+
+  it("rejects empty productId", async () => {
+    await expect(
+      rentalService.createRequestFromProductId({
+        productId: "",
+        durationDays: 3,
+      }),
+    ).rejects.toThrow(/product_not_found/);
+  });
+
+  it("rejects unsupported durations", async () => {
+    const { PRODUCTS } = await import("@/data/products");
+    const product = PRODUCTS[0]!;
+    await expect(
+      rentalService.createRequestFromProductId({
+        productId: product.id,
+        durationDays: 5 as unknown as 3,
+      }),
+    ).rejects.toThrow(/duration_invalid/);
+  });
+
+  it("forged caller-supplied seller / product / price / status fields cannot reach persistence", async () => {
+    const { PRODUCTS } = await import("@/data/products");
+    const product = PRODUCTS[0]!;
+    // The signature only declares {productId, durationDays,
+    // actorBorrowerId?, actorBorrowerName?}. A typed-coerced payload
+    // with extra fields must be silently dropped by the destructure
+    // — none of them can land on the persisted record.
+    const forged = {
+      productId: product.id,
+      durationDays: 1,
+      actorBorrowerId: "borrower_test",
+      // Forged below: must not reach persistence.
+      sellerId: "seller_evil",
+      sellerName: "EVIL",
+      productName: "REWRITTEN",
+      productCategory: "exercise",
+      rentalFee: 1,
+      estimatedValue: 1,
+      status: "settled",
+      payment: { status: "paid" },
+      settlement: { status: "settled" },
+    } as unknown as Parameters<
+      typeof rentalService.createRequestFromProductId
+    >[0];
+    const created = await rentalService.createRequestFromProductId(forged);
+    expect(created.status).toBe("requested");
+    expect(created.sellerId).toBe(product.sellerId); // not "seller_evil"
+    expect(created.sellerName).toBe(product.sellerName); // not "EVIL"
+    expect(created.productName).toBe(product.name);
+    expect(created.productCategory).toBe(product.category);
+    expect(created.amounts.rentalFee).toBe(product.prices["1d"]); // not 1
+    expect(created.payment.status).toBe("not_started");
+    expect(created.settlement.status).toBe("not_ready");
+  });
+
+  it("does not record a borrower id when none is supplied", async () => {
+    const { PRODUCTS } = await import("@/data/products");
+    const product = PRODUCTS[0]!;
+    const created = await rentalService.createRequestFromProductId({
+      productId: product.id,
+      durationDays: 1,
+    });
+    expect(created.borrowerId).toBeUndefined();
+    expect(created.borrowerName).toBeUndefined();
+  });
+});
+
+describe("rentalService.listMyRequestsForProduct", () => {
+  it("scopes by (productId, borrowerId)", async () => {
+    const { PRODUCTS } = await import("@/data/products");
+    const product = PRODUCTS[0]!;
+    const otherProduct = PRODUCTS[1]!;
+    const meId = "borrower_me";
+    const youId = "borrower_you";
+    await rentalService.createRequestFromProductId({
+      productId: product.id,
+      durationDays: 3,
+      actorBorrowerId: meId,
+    });
+    await rentalService.createRequestFromProductId({
+      productId: product.id,
+      durationDays: 1,
+      actorBorrowerId: youId,
+    });
+    await rentalService.createRequestFromProductId({
+      productId: otherProduct.id,
+      durationDays: 7,
+      actorBorrowerId: meId,
+    });
+    const mine = await rentalService.listMyRequestsForProduct(
+      product.id,
+      meId,
+    );
+    expect(mine).toHaveLength(1);
+    expect(mine[0]?.borrowerId).toBe(meId);
+    expect(mine[0]?.productId).toBe(product.id);
+    // Empty when scoping by an empty borrower id (no leak across
+    // visitors sharing a browser).
+    expect(
+      await rentalService.listMyRequestsForProduct(product.id, ""),
+    ).toEqual([]);
+  });
+});

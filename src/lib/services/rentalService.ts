@@ -35,8 +35,10 @@
 //   docs/mvp_security_guardrails.md §6 and
 //   docs/corent_return_trust_layer.md §10 for migration rules.
 
+import type { DurationDays } from "@/domain/durations";
 import type { RentalEvent, RentalIntent, RentalIntentStatus } from "@/domain/intents";
 import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
+import { getProductById } from "@/data/products";
 import {
   assertRentalBorrowerIs,
   assertRentalSellerIs,
@@ -175,9 +177,91 @@ async function computeSettlementBlockReason(
 }
 
 export const rentalService = {
+  // Legacy: trusts the caller to supply seller / product / amount fields.
+  // Phase 1.11 routes the renter UI through `createRequestFromProductId`
+  // instead, which derives every canonical field from the trusted
+  // PRODUCTS source. The legacy helper stays for tests and back-compat
+  // with non-renter call sites (seeded mock data, dev tools).
   async create(input: CreateRentalIntentInput): Promise<RentalIntent> {
     const result = createRentalIntent(input);
     return persistAndEmit(result);
+  },
+
+  // Phase 1.11 — canonical request creation boundary for the
+  // renter-facing item detail flow.
+  //
+  // The caller may supply only `(productId, durationDays, actorBorrowerId?)`.
+  // Every other field — `productName`, `productCategory`, `sellerId`,
+  // `sellerName`, `rentalFee`, `estimatedValue`, `pickupLocationLabel`
+  // — is resolved from the trusted static `PRODUCTS` source. A forged
+  // caller-supplied seller / product / price / status / payment field
+  // therefore cannot reach persistence, because the helper does not
+  // accept those fields at all.
+  //
+  // Throws `Error("product_not_found")` for unknown product ids,
+  // `Error("duration_invalid")` for an unsupported duration. Returns
+  // the persisted `requested` rental.
+  async createRequestFromProductId(input: {
+    productId: string;
+    durationDays: DurationDays;
+    actorBorrowerId?: string;
+    actorBorrowerName?: string;
+  }): Promise<RentalIntent> {
+    if (typeof input.productId !== "string" || input.productId.length === 0) {
+      throw new Error("product_not_found");
+    }
+    if (![1, 3, 7].includes(input.durationDays)) {
+      throw new Error("duration_invalid");
+    }
+    const product = getProductById(input.productId);
+    if (!product) throw new Error("product_not_found");
+
+    // The duration → price map on the canonical product is the only
+    // source of truth for the rental fee. The caller cannot inject
+    // a price.
+    const rentalFee =
+      input.durationDays === 1
+        ? product.prices["1d"]
+        : input.durationDays === 3
+          ? product.prices["3d"]
+          : product.prices["7d"];
+
+    const result = createRentalIntent({
+      productId: product.id,
+      productName: product.name,
+      productCategory: product.category,
+      durationDays: input.durationDays,
+      rentalFee,
+      estimatedValue: product.estimatedValue,
+      sellerId: product.sellerId,
+      sellerName: product.sellerName,
+      borrowerId: input.actorBorrowerId,
+      borrowerName: input.actorBorrowerName,
+      pickupLocationLabel: product.pickupArea,
+    });
+    return persistAndEmit(result);
+  },
+
+  // Restore the most recent rental request a given borrower has sent
+  // for a specific product. Used by the renter item detail surface
+  // to keep "you already requested this" continuity. Scoping by
+  // `(productId, borrowerId)` (Phase 1.11) prevents one local user
+  // from seeing another local user's request when sharing a browser.
+  async listMyRequestsForProduct(
+    productId: string,
+    actorBorrowerId: string,
+  ): Promise<RentalIntent[]> {
+    if (
+      !productId ||
+      typeof actorBorrowerId !== "string" ||
+      actorBorrowerId.length === 0
+    ) {
+      return [];
+    }
+    const all = await getPersistence().listRentalIntents();
+    return all.filter(
+      (r) => r.productId === productId && r.borrowerId === actorBorrowerId,
+    );
   },
 
   async list(): Promise<RentalIntent[]> {

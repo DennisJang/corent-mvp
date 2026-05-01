@@ -105,6 +105,17 @@ export const APPROVAL_COPY = {
 
   // Generic surface label.
   approvalRequired: "요청 후 대여 가능 여부를 확인해요.",
+
+  // Phase 1.11 — request-only renter copy.
+  requestOnlyTitle: "요청 단계 (베타)",
+  requestOnlyBody:
+    "이 단계는 소유자에게 대여 가능 여부를 묻는 요청 흐름이에요. 베타에서는 결제, 보증금, 환불, 정산, 배송이 연결되어 있지 않아요. 아래 표시 금액은 참고용이에요.",
+  requestCtaIdle: "대여 요청 보내기",
+  requestCtaSubmitting: "요청 보내는 중…",
+  requestReceived: "요청을 보냈어요",
+  // Renter follow-up mutations are deliberately out of scope for now.
+  renterMutationsDeferred:
+    "요청 이후 단계(취소, 결제, 픽업, 반납)는 베타에서 아직 열려 있지 않아요.",
 } as const;
 
 // --------------------------------------------------------------
@@ -215,7 +226,7 @@ export const STOREFRONT_COPY = {
   trustEmpty: "공개 신뢰 이력이 아직 모이지 않았어요.",
   // Read-only / no-action disclaimer that pairs with the claim window
   // copy elsewhere — this surface never books, never charges.
-  readOnlyNote: "공개 정보만 표시돼요. 예약·결제는 물건 페이지에서 진행해요.",
+  readOnlyNote: "공개 정보만 표시돼요. 요청 흐름은 물건 페이지에서 확인해요.",
   // Fallback marker copy shown when `isFallback` is true (no Seller
   // record). The reviewer must be able to tell this is not real
   // persisted profile data.

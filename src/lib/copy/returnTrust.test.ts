@@ -227,7 +227,7 @@ describe("STOREFRONT_COPY", () => {
     expect(STOREFRONT_COPY.listingsHeading).toBe("이 셀러의 물건");
     expect(STOREFRONT_COPY.trustHeading).toBe("신뢰 이력");
     expect(STOREFRONT_COPY.readOnlyNote).toBe(
-      "공개 정보만 표시돼요. 예약·결제는 물건 페이지에서 진행해요.",
+      "공개 정보만 표시돼요. 요청 흐름은 물건 페이지에서 확인해요.",
     );
     expect(STOREFRONT_COPY.fallbackTag).toBe("프로필 일부만 등록됨");
   });
@@ -250,6 +250,15 @@ describe("APPROVAL_COPY", () => {
     );
     expect(APPROVAL_COPY.approveSuccess).toBe("대여 요청을 승인했어요.");
     expect(APPROVAL_COPY.declineSuccess).toBe("대여 요청을 거절했어요.");
+  });
+
+  it("documents the request-only renter strings (Phase 1.11)", () => {
+    expect(APPROVAL_COPY.requestOnlyTitle).toBe("요청 단계 (베타)");
+    expect(APPROVAL_COPY.requestCtaIdle).toBe("대여 요청 보내기");
+    expect(APPROVAL_COPY.requestReceived).toBe("요청을 보냈어요");
+    expect(APPROVAL_COPY.renterMutationsDeferred).toBe(
+      "요청 이후 단계(취소, 결제, 픽업, 반납)는 베타에서 아직 열려 있지 않아요.",
+    );
   });
 
   it("avoids forbidden regulated-language and payment-implementation claims", () => {
