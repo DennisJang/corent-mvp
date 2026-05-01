@@ -9,6 +9,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
+import { ChatToListingIntakeCard } from "@/components/ChatToListingIntakeCard";
 import { SellerDashboardStat } from "@/components/SellerDashboardStat";
 import { SellerProfileEditCard } from "@/components/SellerProfileEditCard";
 import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatusBadge";
@@ -560,6 +561,17 @@ export function SellerDashboard() {
             sellerId={session.sellerId}
             fallbackName={CURRENT_SELLER.name}
             fallbackIntro={CURRENT_SELLER.trustNote}
+          />
+        </div>
+      </section>
+
+      <section className="border-b border-black">
+        <div className="container-dashboard py-12">
+          <ChatToListingIntakeCard
+            sellerId={session.sellerId}
+            onDraftCreated={() => {
+              void refresh();
+            }}
           />
         </div>
       </section>

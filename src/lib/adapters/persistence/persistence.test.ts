@@ -1,6 +1,11 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 
 import type {
+  IntakeExtraction,
+  IntakeMessage,
+  IntakeSession,
+} from "@/domain/intake";
+import type {
   ListingIntent,
   RentalEvent,
   RentalIntent,
@@ -195,6 +200,42 @@ const baseClaimReview: ClaimReview = {
   status: "open",
   openedAt: "2026-04-29T00:08:00.000Z",
   openedReason: "본체에 새로운 흠집이 보여요",
+};
+
+const baseIntakeSession: IntakeSession = {
+  id: "isn_test",
+  sellerId: "seller_test",
+  status: "drafting",
+  createdAt: "2026-04-29T00:10:00.000Z",
+  updatedAt: "2026-04-29T00:10:00.000Z",
+};
+
+const baseIntakeMessage: IntakeMessage = {
+  id: "imsg_seller_test",
+  sessionId: baseIntakeSession.id,
+  role: "seller",
+  content: "테라건 미니 빌려줄게요. 강남역 근처에서 픽업 가능해요.",
+  createdAt: "2026-04-29T00:10:30.000Z",
+};
+
+const baseIntakeAssistantMessage: IntakeMessage = {
+  id: "imsg_assistant_test",
+  sessionId: baseIntakeSession.id,
+  role: "assistant",
+  content: "초안 미리보기 (검토 후 수정 가능):",
+  createdAt: "2026-04-29T00:10:31.000Z",
+};
+
+const baseIntakeExtraction: IntakeExtraction = {
+  sessionId: baseIntakeSession.id,
+  itemName: "Theragun Mini",
+  category: "massage_gun",
+  pickupArea: "강남역 근처",
+  condition: "lightly_used",
+  components: ["본체"],
+  oneDayPrice: 9000,
+  missingFields: ["estimatedValue", "defects"],
+  createdAt: "2026-04-29T00:10:30.000Z",
 };
 
 const baseProfileOverride: SellerProfileOverride = {
@@ -603,6 +644,48 @@ describe("MemoryPersistenceAdapter", () => {
       await adapter.listClaimReviewsForRental(baseRentalIntent.id),
     ).toEqual([]);
   });
+
+  it("saves, reads, and upserts intake sessions / messages / extractions", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toBeNull();
+    expect(await adapter.listIntakeSessions()).toEqual([]);
+    expect(
+      await adapter.listIntakeMessagesForSession(baseIntakeSession.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getIntakeExtractionForSession(baseIntakeSession.id),
+    ).toBeNull();
+
+    await adapter.saveIntakeSession(baseIntakeSession);
+    await adapter.appendIntakeMessage(baseIntakeMessage);
+    await adapter.appendIntakeMessage(baseIntakeAssistantMessage);
+    await adapter.saveIntakeExtraction(baseIntakeExtraction);
+
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toEqual(
+      baseIntakeSession,
+    );
+    expect(await adapter.listIntakeSessions()).toEqual([baseIntakeSession]);
+    expect(
+      await adapter.listIntakeMessagesForSession(baseIntakeSession.id),
+    ).toEqual([baseIntakeMessage, baseIntakeAssistantMessage]);
+    expect(
+      await adapter.getIntakeExtractionForSession(baseIntakeSession.id),
+    ).toEqual(baseIntakeExtraction);
+
+    // Re-saving a session upserts; re-saving an extraction upserts.
+    const finalized: IntakeSession = {
+      ...baseIntakeSession,
+      status: "draft_created",
+      listingIntentId: "li_finalized",
+      updatedAt: "2026-04-29T00:11:00.000Z",
+    };
+    await adapter.saveIntakeSession(finalized);
+    expect(await adapter.listIntakeSessions()).toHaveLength(1);
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toEqual(
+      finalized,
+    );
+  });
 });
 
 describe("LocalStoragePersistenceAdapter", () => {
@@ -954,6 +1037,66 @@ describe("LocalStoragePersistenceAdapter", () => {
     await expect(adapter.saveTrustEvent(basePickupTrustEvent)).rejects.toThrow(
       /localStorage write failed/,
     );
+  });
+
+  it("saves, reads, lists, and upserts intake sessions / messages / extractions", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toBeNull();
+    expect(await adapter.listIntakeSessions()).toEqual([]);
+    expect(
+      await adapter.listIntakeMessagesForSession(baseIntakeSession.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getIntakeExtractionForSession(baseIntakeSession.id),
+    ).toBeNull();
+
+    await adapter.saveIntakeSession(baseIntakeSession);
+    await adapter.appendIntakeMessage(baseIntakeMessage);
+    await adapter.appendIntakeMessage(baseIntakeAssistantMessage);
+    await adapter.saveIntakeExtraction(baseIntakeExtraction);
+
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toEqual(
+      baseIntakeSession,
+    );
+    expect(await adapter.listIntakeSessions()).toEqual([baseIntakeSession]);
+    expect(
+      await adapter.listIntakeMessagesForSession(baseIntakeSession.id),
+    ).toEqual([baseIntakeMessage, baseIntakeAssistantMessage]);
+    expect(
+      await adapter.getIntakeExtractionForSession(baseIntakeSession.id),
+    ).toEqual(baseIntakeExtraction);
+
+    const finalized: IntakeSession = {
+      ...baseIntakeSession,
+      status: "draft_created",
+      listingIntentId: "li_finalized",
+      updatedAt: "2026-04-29T00:11:00.000Z",
+    };
+    await adapter.saveIntakeSession(finalized);
+    expect(await adapter.listIntakeSessions()).toHaveLength(1);
+    expect(await adapter.getIntakeSession(baseIntakeSession.id)).toEqual(
+      finalized,
+    );
+  });
+
+  it("clearAll removes intake records alongside other CoRent keys", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    await adapter.saveIntakeSession(baseIntakeSession);
+    await adapter.appendIntakeMessage(baseIntakeMessage);
+    await adapter.saveIntakeExtraction(baseIntakeExtraction);
+    await adapter.clearAll();
+
+    expect(await adapter.listIntakeSessions()).toEqual([]);
+    expect(
+      await adapter.listIntakeMessagesForSession(baseIntakeSession.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getIntakeExtractionForSession(baseIntakeSession.id),
+    ).toBeNull();
   });
 
   it("deleteRentalIntent cascades to handoff/trust/claim records", async () => {

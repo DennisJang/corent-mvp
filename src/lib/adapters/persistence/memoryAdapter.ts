@@ -16,6 +16,11 @@
 //     localStorage adapter's behavior.
 
 import type {
+  IntakeExtraction,
+  IntakeMessage,
+  IntakeSession,
+} from "@/domain/intake";
+import type {
   ListingIntent,
   RentalEvent,
   RentalIntent,
@@ -59,6 +64,9 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected claimWindows = new Map<string, ClaimWindow>();
   protected claimReviews = new Map<string, ClaimReview>();
   protected sellerProfileOverrides = new Map<string, SellerProfileOverride>();
+  protected intakeSessions = new Map<string, IntakeSession>();
+  protected intakeMessages = new Map<string, IntakeMessage[]>();
+  protected intakeExtractions = new Map<string, IntakeExtraction>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
     this.rentalIntents.set(intent.id, clone(intent));
@@ -214,6 +222,36 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     );
   }
 
+  async saveIntakeSession(session: IntakeSession): Promise<void> {
+    this.intakeSessions.set(session.id, clone(session));
+  }
+  async getIntakeSession(id: string): Promise<IntakeSession | null> {
+    const found = this.intakeSessions.get(id);
+    return found ? clone(found) : null;
+  }
+  async listIntakeSessions(): Promise<IntakeSession[]> {
+    return Array.from(this.intakeSessions.values()).map((v) => clone(v));
+  }
+  async appendIntakeMessage(message: IntakeMessage): Promise<void> {
+    const list = this.intakeMessages.get(message.sessionId) ?? [];
+    list.push(clone(message));
+    this.intakeMessages.set(message.sessionId, list);
+  }
+  async listIntakeMessagesForSession(
+    sessionId: string,
+  ): Promise<IntakeMessage[]> {
+    return (this.intakeMessages.get(sessionId) ?? []).map((v) => clone(v));
+  }
+  async saveIntakeExtraction(extraction: IntakeExtraction): Promise<void> {
+    this.intakeExtractions.set(extraction.sessionId, clone(extraction));
+  }
+  async getIntakeExtractionForSession(
+    sessionId: string,
+  ): Promise<IntakeExtraction | null> {
+    const found = this.intakeExtractions.get(sessionId);
+    return found ? clone(found) : null;
+  }
+
   async clearAll(): Promise<void> {
     this.rentalIntents.clear();
     this.listingIntents.clear();
@@ -224,5 +262,8 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     this.claimWindows.clear();
     this.claimReviews.clear();
     this.sellerProfileOverrides.clear();
+    this.intakeSessions.clear();
+    this.intakeMessages.clear();
+    this.intakeExtractions.clear();
   }
 }

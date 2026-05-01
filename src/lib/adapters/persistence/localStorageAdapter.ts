@@ -4,6 +4,11 @@
 // state.
 
 import type {
+  IntakeExtraction,
+  IntakeMessage,
+  IntakeSession,
+} from "@/domain/intake";
+import type {
   ListingIntent,
   RentalEvent,
   RentalIntent,
@@ -48,6 +53,9 @@ const KEYS = {
   claimWindows: "corent:claimWindows",
   claimReviews: "corent:claimReviews",
   sellerProfileOverrides: "corent:sellerProfileOverrides",
+  intakeSessions: "corent:intakeSessions",
+  intakeMessages: "corent:intakeMessages",
+  intakeExtractions: "corent:intakeExtractions",
 } as const;
 
 // Composite key inside the handoff blob: `${rentalIntentId}:${phase}`.
@@ -383,6 +391,65 @@ export class LocalStoragePersistenceAdapter implements PersistenceAdapter {
       {},
     );
     return Object.values(pickValid(raw, isProfileOverrideShape));
+  }
+
+  async saveIntakeSession(session: IntakeSession): Promise<void> {
+    const all = readJson<Record<string, IntakeSession>>(
+      KEYS.intakeSessions,
+      {},
+    );
+    all[session.id] = session;
+    writeJson(KEYS.intakeSessions, all);
+  }
+  async getIntakeSession(id: string): Promise<IntakeSession | null> {
+    const all = readJson<Record<string, IntakeSession>>(
+      KEYS.intakeSessions,
+      {},
+    );
+    return all[id] ?? null;
+  }
+  async listIntakeSessions(): Promise<IntakeSession[]> {
+    const all = readJson<Record<string, IntakeSession>>(
+      KEYS.intakeSessions,
+      {},
+    );
+    return Object.values(all);
+  }
+  async appendIntakeMessage(message: IntakeMessage): Promise<void> {
+    const all = readJson<Record<string, IntakeMessage[]>>(
+      KEYS.intakeMessages,
+      {},
+    );
+    const list = all[message.sessionId] ?? [];
+    list.push(message);
+    all[message.sessionId] = list;
+    writeJson(KEYS.intakeMessages, all);
+  }
+  async listIntakeMessagesForSession(
+    sessionId: string,
+  ): Promise<IntakeMessage[]> {
+    const all = readJson<Record<string, IntakeMessage[]>>(
+      KEYS.intakeMessages,
+      {},
+    );
+    return all[sessionId] ?? [];
+  }
+  async saveIntakeExtraction(extraction: IntakeExtraction): Promise<void> {
+    const all = readJson<Record<string, IntakeExtraction>>(
+      KEYS.intakeExtractions,
+      {},
+    );
+    all[extraction.sessionId] = extraction;
+    writeJson(KEYS.intakeExtractions, all);
+  }
+  async getIntakeExtractionForSession(
+    sessionId: string,
+  ): Promise<IntakeExtraction | null> {
+    const all = readJson<Record<string, IntakeExtraction>>(
+      KEYS.intakeExtractions,
+      {},
+    );
+    return all[sessionId] ?? null;
   }
 
   async clearAll(): Promise<void> {

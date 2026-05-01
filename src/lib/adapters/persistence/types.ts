@@ -3,6 +3,11 @@
 // in without changing callers.
 
 import type {
+  IntakeExtraction,
+  IntakeMessage,
+  IntakeSession,
+} from "@/domain/intake";
+import type {
   ListingIntent,
   RentalEvent,
   RentalIntent,
@@ -83,6 +88,21 @@ export interface PersistenceAdapter {
     sellerId: string,
   ): Promise<SellerProfileOverride | null>;
   listSellerProfileOverrides(): Promise<SellerProfileOverride[]>;
+
+  // Chat-to-listing intake (skeleton). Sessions are upserted by id;
+  // messages are append-only per session; the extraction is upserted
+  // by sessionId (one extraction per session in this skeleton phase).
+  // See docs/corent_functional_mvp_intent_rules.md and the intake
+  // service for the surrounding contract.
+  saveIntakeSession(session: IntakeSession): Promise<void>;
+  getIntakeSession(id: string): Promise<IntakeSession | null>;
+  listIntakeSessions(): Promise<IntakeSession[]>;
+  appendIntakeMessage(message: IntakeMessage): Promise<void>;
+  listIntakeMessagesForSession(sessionId: string): Promise<IntakeMessage[]>;
+  saveIntakeExtraction(extraction: IntakeExtraction): Promise<void>;
+  getIntakeExtractionForSession(
+    sessionId: string,
+  ): Promise<IntakeExtraction | null>;
 
   // Wipe all CoRent-MVP-owned data. Used by the dashboard's "로컬 데이터
   // 비우기" affordance and by tests that need a clean slate.
