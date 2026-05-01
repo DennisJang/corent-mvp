@@ -375,3 +375,132 @@ describe("openClaim emits condition_issue_reported alongside admin_review_starte
     expect(summary.conditionCheckCompletedCount).toBe(0);
   });
 });
+
+// --------------------------------------------------------------
+// Phase 1.10 — admin_decision_recorded carries reconciliation metadata.
+// --------------------------------------------------------------
+
+describe("recordAdminDecision emits structured metadata", () => {
+  async function setupOpenReview() {
+    const r = await makeRentalAtReturnConfirmed();
+    const { review } = await claimReviewService.openClaim(
+      r.id,
+      SELLER_ID,
+      "흠집",
+    );
+    return { rental: r, review };
+  }
+
+  it("admin_decision_recorded includes claimReviewId + decision + decidedBy", async () => {
+    const { review } = await setupOpenReview();
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "approved",
+      ADMIN_ID,
+      "픽업 사진과 거의 동일",
+    );
+    const events = await getPersistence().listTrustEventsForRental(
+      review.rentalIntentId,
+    );
+    const decision = events.find((e) => e.type === "admin_decision_recorded");
+    expect(decision).toBeDefined();
+    expect(decision?.metadata).toEqual({
+      claimReviewId: review.id,
+      decision: "approved",
+      decidedBy: ADMIN_ID,
+    });
+  });
+
+  it("repeated needs_review decisions emit distinct events with metadata", async () => {
+    const { review } = await setupOpenReview();
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "needs_review",
+      ADMIN_ID,
+      "1차",
+    );
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "needs_review",
+      ADMIN_ID,
+      "2차",
+    );
+    const events = await getPersistence().listTrustEventsForRental(
+      review.rentalIntentId,
+    );
+    const decisions = events.filter(
+      (e) => e.type === "admin_decision_recorded",
+    );
+    expect(decisions).toHaveLength(2);
+    // Distinct event ids (append-only).
+    expect(new Set(decisions.map((e) => e.id)).size).toBe(2);
+    // Metadata captures both decisions.
+    expect(decisions.every((e) => e.metadata?.decision === "needs_review")).toBe(
+      true,
+    );
+  });
+});
+
+// --------------------------------------------------------------
+// Phase 1.10 — terminal-state guard. A `settled` rental cannot have a
+// brand-new claim window opened. Existing windows stay readable.
+// --------------------------------------------------------------
+
+describe("openClaimWindow terminal-state guard", () => {
+  it("rejects opening a window for a settled rental that has no existing window", async () => {
+    // Construct a settled rental fixture directly via persistence so
+    // no auto-opened window exists.
+    const persistence = getPersistence();
+    const settledRental = {
+      id: "ri_settled_test",
+      productId: "p_test",
+      productName: "DEMO",
+      productCategory: "massage_gun" as const,
+      borrowerId: BORROWER_ID,
+      borrowerName: "B",
+      sellerId: SELLER_ID,
+      sellerName: "S",
+      status: "settled" as const,
+      durationDays: 3 as const,
+      amounts: {
+        rentalFee: 21000,
+        safetyDeposit: 0,
+        platformFee: 2100,
+        sellerPayout: 18900,
+        borrowerTotal: 21000,
+      },
+      payment: { provider: "mock" as const, status: "paid" as const },
+      pickup: { method: "direct" as const, status: "confirmed" as const },
+      return: { status: "confirmed" as const },
+      settlement: {
+        status: "settled" as const,
+        sellerPayout: 18900,
+      },
+      createdAt: "2026-04-29T00:00:00.000Z",
+      updatedAt: "2026-04-29T01:00:00.000Z",
+    };
+    await persistence.saveRentalIntent(settledRental);
+    await expect(
+      claimReviewService.openClaimWindow(settledRental.id),
+    ).rejects.toBeInstanceOf(ClaimReviewInputError);
+    expect(
+      await claimReviewService.getClaimWindowForRental(settledRental.id),
+    ).toBeNull();
+  });
+
+  it("returns the existing window idempotently even when status is now settled", async () => {
+    // The idempotent path runs BEFORE the openable-status check, so a
+    // settled rental that already has a window (e.g. one opened at
+    // return_confirmed and carried forward) is still readable via
+    // openClaimWindow without throwing.
+    const r = await makeRentalAtReturnConfirmed();
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    const ready = await rentalService.readySettlement(r);
+    await rentalService.settle(ready);
+    // Calling openClaimWindow on the settled rental returns the
+    // existing window (now closed_no_claim) without trying to open a
+    // new one.
+    const w = await claimReviewService.openClaimWindow(r.id);
+    expect(w.status).toBe("closed_no_claim");
+  });
+});

@@ -153,6 +153,12 @@ export type TrustEvent = {
   // cap this aggressively; the type stays a plain string here so the
   // in-memory and Phase 2 paths share the shape.
   notes?: string;
+  // Bounded structured metadata for reconciliation. Used by
+  // `admin_decision_recorded` to carry `claimReviewId`, `decision`,
+  // and `decidedBy` so the audit log can be reconciled with the
+  // claim review row without a join. Each entry is a string key →
+  // string value; the service layer caps both. Phase 1.10.
+  metadata?: Record<string, string>;
 };
 
 // --------------------------------------------------------------

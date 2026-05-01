@@ -26,11 +26,18 @@ export type CreateTrustEventInput = {
   handoffPhase?: HandoffPhase;
   evidenceRefs?: string[];
   notes?: string;
+  // Bounded reconciliation metadata. Phase 1.10. Each key is at most
+  // METADATA_KEY_MAX chars; each value at most METADATA_VALUE_MAX chars;
+  // at most METADATA_ENTRIES entries.
+  metadata?: Record<string, string>;
   // Override `at` for SSR / deterministic test runs. Defaults to nowIso().
   at?: string;
 };
 
 const NOTE_MAX = 240;
+const METADATA_KEY_MAX = 60;
+const METADATA_VALUE_MAX = 240;
+const METADATA_ENTRIES = 10;
 
 export class TrustEventInputError extends Error {
   readonly code:
@@ -39,7 +46,8 @@ export class TrustEventInputError extends Error {
     | "actor_invalid"
     | "handoff_phase_invalid"
     | "notes_too_long"
-    | "evidence_refs_invalid";
+    | "evidence_refs_invalid"
+    | "metadata_invalid";
   constructor(code: TrustEventInputError["code"], message: string) {
     super(message);
     this.name = "TrustEventInputError";
@@ -128,6 +136,39 @@ export function createTrustEvent(input: CreateTrustEventInput): TrustEvent {
       }
     }
   }
+  if (input.metadata !== undefined) {
+    if (
+      typeof input.metadata !== "object" ||
+      input.metadata === null ||
+      Array.isArray(input.metadata)
+    ) {
+      throw new TrustEventInputError(
+        "metadata_invalid",
+        "metadata must be a plain object",
+      );
+    }
+    const entries = Object.entries(input.metadata);
+    if (entries.length > METADATA_ENTRIES) {
+      throw new TrustEventInputError(
+        "metadata_invalid",
+        `metadata supports at most ${METADATA_ENTRIES} entries`,
+      );
+    }
+    for (const [k, v] of entries) {
+      if (typeof k !== "string" || k.length === 0 || k.length > METADATA_KEY_MAX) {
+        throw new TrustEventInputError(
+          "metadata_invalid",
+          `metadata keys must be non-empty strings <= ${METADATA_KEY_MAX} chars`,
+        );
+      }
+      if (typeof v !== "string" || v.length > METADATA_VALUE_MAX) {
+        throw new TrustEventInputError(
+          "metadata_invalid",
+          `metadata values must be strings <= ${METADATA_VALUE_MAX} chars`,
+        );
+      }
+    }
+  }
 
   return {
     id: generateId("tev"),
@@ -138,6 +179,7 @@ export function createTrustEvent(input: CreateTrustEventInput): TrustEvent {
     handoffPhase: input.handoffPhase,
     evidenceRefs: input.evidenceRefs,
     notes: input.notes,
+    metadata: input.metadata,
   };
 }
 

@@ -87,13 +87,19 @@ function validateBoundedString(
 // statuses) before a claim window has anything to inspect. Earlier
 // statuses cannot open a window; later admin-routed statuses are
 // allowed because a window may already exist by then.
+//
+// `settled` is intentionally NOT in this list (Phase 1.10): a settled
+// rental is terminal, and creating a brand-new window on it would
+// reopen state we treat as resolved. Existing windows on a settled
+// rental stay readable — the idempotent path (`if (existing) return
+// existing`) runs BEFORE this gate, so a re-call against a settled
+// rental that already has a window is a safe no-op.
 const CLAIM_WINDOW_OPENABLE_STATUSES = new Set<RentalIntent["status"]>([
   "return_confirmed",
   "settlement_ready",
   "damage_reported",
   "dispute_opened",
   "settlement_blocked",
-  "settled",
 ]);
 
 export const claimReviewService = {
@@ -315,11 +321,20 @@ export const claimReviewService = {
       decisionNotes: notes,
     };
     await persistence.saveClaimReview(next);
+    // Phase 1.10: emit reconciliation metadata so the audit log can be
+    // joined to the claim review row without ambiguity. Repeated
+    // `needs_review` decisions still emit one event each — the
+    // metadata makes them distinguishable.
     await trustEventService.recordTrustEvent({
       rentalIntentId: next.rentalIntentId,
       type: "admin_decision_recorded",
       actor: "admin",
       notes,
+      metadata: {
+        claimReviewId: next.id,
+        decision,
+        decidedBy,
+      },
     });
     return next;
   },

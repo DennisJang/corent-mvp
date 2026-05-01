@@ -9,6 +9,18 @@
 // — which validates, persists, and emits a TrustEvent. Recording a
 // decision does NOT trigger any payment, deposit, refund, escrow, or
 // external notification; this is a placeholder admin layer.
+//
+// Phase 1.10 — Admin identity boundary:
+//
+//   - The component takes NO `adminId` prop. The legitimate
+//     `decidedBy` value is fetched from `/api/admin/claims/identity`,
+//     which re-validates the founder session server-side. A tampered
+//     client cannot smuggle a different identity through the legit
+//     UI flow because every decision uses the server-returned email.
+//   - If the identity fetch fails (404 / network error), the decision
+//     buttons stay disabled and a notice explains the gap. Persistence
+//     is still local — see the page-level comment for the local-MVP
+//     caveat.
 
 import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
@@ -35,7 +47,26 @@ function statusLabel(status: ClaimReviewStatus): string {
   }
 }
 
-export function AdminClaimsConsole({ adminId }: { adminId: string }) {
+// Server-validated admin identity. Re-fetched per-decision so a
+// session that expires mid-session disables further writes.
+async function fetchAdminIdentity(): Promise<string | null> {
+  try {
+    const res = await fetch("/api/admin/claims/identity", {
+      method: "GET",
+      cache: "no-store",
+      credentials: "same-origin",
+    });
+    if (!res.ok) return null;
+    const json = (await res.json()) as { email?: unknown };
+    return typeof json.email === "string" && json.email.length > 0
+      ? json.email
+      : null;
+  } catch {
+    return null;
+  }
+}
+
+export function AdminClaimsConsole() {
   const [reviews, setReviews] = useState<ClaimReview[]>([]);
   const [rentalsById, setRentalsById] = useState<Map<string, RentalIntent>>(
     () => new Map(),
@@ -44,6 +75,10 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
   const [notesById, setNotesById] = useState<Record<string, string>>({});
+  // Server-validated admin email. `null` means the identity hasn't
+  // been fetched yet (or the fetch failed); decision buttons stay
+  // disabled until we get a verified value.
+  const [adminEmail, setAdminEmail] = useState<string | null>(null);
 
   const refresh = async () => {
     const list = await claimReviewService.listClaimReviews();
@@ -58,6 +93,9 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().finally(() => setLoaded(true));
+    fetchAdminIdentity().then((email) => {
+      setAdminEmail(email);
+    });
   }, []);
 
   // Open queue first, then everything else, each group sorted by
@@ -84,11 +122,24 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
     setBusyId(review.id);
     setToast(null);
     try {
+      // Always re-fetch the admin identity per-decision: the founder
+      // session may have rotated since the queue was loaded, and
+      // every legitimate decision write must derive `decidedBy` from
+      // the server-validated session.
+      const verifiedEmail = await fetchAdminIdentity();
+      if (!verifiedEmail) {
+        setAdminEmail(null);
+        setToast(
+          "관리자 세션이 확인되지 않아요. 로그인 상태를 다시 확인해주세요.",
+        );
+        return;
+      }
+      setAdminEmail(verifiedEmail);
       const notes = notesById[review.id];
       await claimReviewService.recordAdminDecision(
         review.id,
         decision,
-        adminId,
+        verifiedEmail,
         notes && notes.length > 0 ? notes : undefined,
       );
       await refresh();
@@ -120,6 +171,11 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
         <h3 className="text-title">{CLAIM_REVIEW_COPY.pageTitle}</h3>
         <Badge variant="dashed">{sorted.length}건</Badge>
       </header>
+      {loaded && !adminEmail ? (
+        <div className="px-6 py-3 border-b border-[color:var(--ink-12)] text-small text-[color:var(--ink-60)]">
+          관리자 세션을 확인하지 못했어요. 결정 기록은 일시적으로 비활성화됩니다.
+        </div>
+      ) : null}
       <ul className="flex flex-col">
         {sorted.map((review) => {
           const rental = rentalsById.get(review.rentalIntentId);
@@ -192,7 +248,7 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
                   <Button
                     size="md"
                     onClick={() => handleDecide(review, "approved")}
-                    disabled={busyId === review.id}
+                    disabled={busyId === review.id || !adminEmail}
                     type="button"
                   >
                     {CLAIM_REVIEW_COPY.decisionApproveAction}
@@ -201,7 +257,7 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
                     size="md"
                     variant="secondary"
                     onClick={() => handleDecide(review, "rejected")}
-                    disabled={busyId === review.id}
+                    disabled={busyId === review.id || !adminEmail}
                     type="button"
                   >
                     {CLAIM_REVIEW_COPY.decisionRejectAction}
@@ -210,7 +266,7 @@ export function AdminClaimsConsole({ adminId }: { adminId: string }) {
                     size="md"
                     variant="secondary"
                     onClick={() => handleDecide(review, "needs_review")}
-                    disabled={busyId === review.id}
+                    disabled={busyId === review.id || !adminEmail}
                     type="button"
                   >
                     {CLAIM_REVIEW_COPY.decisionNeedsReviewAction}

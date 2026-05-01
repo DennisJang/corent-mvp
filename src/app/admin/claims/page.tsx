@@ -9,6 +9,13 @@
 // claim window / claim review skeleton is local-only — there is no
 // server DB for it. Decisions stored here do NOT trigger any payment,
 // deposit, refund, settlement, or external notification.
+//
+// Admin identity for decision writes (Phase 1.10): the client island
+// re-validates the founder session via the `/api/admin/claims/identity`
+// route before each decision, and uses the server-returned email as
+// the canonical `decidedBy`. The page does NOT pass the email as a
+// client prop anymore — every legitimate decision now derives its
+// admin id server-side.
 
 import { notFound } from "next/navigation";
 import { AdminClaimsConsole } from "@/components/AdminClaimsConsole";
@@ -39,7 +46,7 @@ export default async function FounderAdminClaimsPage() {
         </p>
       </section>
 
-      <AdminClaimsConsole adminId={session.email} />
+      <AdminClaimsConsole />
     </main>
   );
 }

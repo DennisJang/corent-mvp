@@ -532,18 +532,76 @@ describe("MemoryPersistenceAdapter", () => {
     expect(
       await adapter.listTrustEventsForRental("ri_other"),
     ).toEqual([otherRentalTrustEvent]);
+  });
 
-    // Re-saving the same id overwrites instead of duplicating.
+  it("rejects re-saving an existing trust event id (append-only)", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+    await adapter.saveTrustEvent(basePickupTrustEvent);
     const updated: TrustEvent = {
       ...basePickupTrustEvent,
       notes: "updated note",
     };
-    await adapter.saveTrustEvent(updated);
-    const after = await adapter.listTrustEventsForRental(baseRentalIntent.id);
-    expect(after).toHaveLength(2);
-    expect(after).toEqual(
-      expect.arrayContaining([updated, baseReturnTrustEvent]),
+    await expect(adapter.saveTrustEvent(updated)).rejects.toThrow(
+      /trust_event_duplicate_id/,
     );
+    // The original record stays unchanged.
+    const after = await adapter.listTrustEventsForRental(baseRentalIntent.id);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toEqual(basePickupTrustEvent);
+  });
+
+  it("returns clones — mutating returned objects does NOT mutate stored state", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+    await adapter.saveRentalIntent(baseRentalIntent);
+    const fetched = await adapter.getRentalIntent(baseRentalIntent.id);
+    expect(fetched).not.toBe(baseRentalIntent);
+    // Tamper with the returned object.
+    (fetched as RentalIntent).status = "settled";
+    const reload = await adapter.getRentalIntent(baseRentalIntent.id);
+    expect(reload?.status).toBe(baseRentalIntent.status);
+    // Listings parity.
+    await adapter.saveListingIntent(baseListingIntent);
+    const list = await adapter.listListingIntents();
+    list[0]!.item.name = "tampered";
+    const reloadList = await adapter.listListingIntents();
+    expect(reloadList[0]?.item.name).toBe(baseListingIntent.item.name);
+  });
+
+  it("clone-on-save protects against later mutation of the input object", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+    const mutable = makeRentalIntent({ status: "requested" });
+    await adapter.saveRentalIntent(mutable);
+    // After save, mutate the input object the caller still holds.
+    mutable.status = "settled";
+    const reload = await adapter.getRentalIntent(mutable.id);
+    expect(reload?.status).toBe("requested");
+  });
+
+  it("deleteRentalIntent cascades to handoff/trust/claim records", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+    await adapter.saveRentalIntent(baseRentalIntent);
+    await adapter.appendRentalEvent(baseRentalEvent);
+    await adapter.saveHandoffRecord(basePickupHandoff);
+    await adapter.saveTrustEvent(basePickupTrustEvent);
+    await adapter.saveClaimWindow(baseClaimWindow);
+    await adapter.saveClaimReview(baseClaimReview);
+
+    await adapter.deleteRentalIntent(baseRentalIntent.id);
+
+    expect(await adapter.getRentalIntent(baseRentalIntent.id)).toBeNull();
+    expect(await adapter.listRentalEvents(baseRentalIntent.id)).toEqual([]);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
   });
 });
 
@@ -830,6 +888,113 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(
       await adapter.listTrustEventsForRental("ri_other"),
     ).toEqual([otherRentalTrustEvent]);
+  });
+
+  it("rejects re-saving an existing trust event id (append-only)", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+    await adapter.saveTrustEvent(basePickupTrustEvent);
+    const updated: TrustEvent = {
+      ...basePickupTrustEvent,
+      notes: "updated note",
+    };
+    await expect(adapter.saveTrustEvent(updated)).rejects.toThrow(
+      /trust_event_duplicate_id/,
+    );
+    const after = await adapter.listTrustEventsForRental(baseRentalIntent.id);
+    expect(after).toHaveLength(1);
+    expect(after[0]).toEqual(basePickupTrustEvent);
+  });
+
+  it("drops malformed trust/admin records on read (record-level validation)", async () => {
+    stubWindowWithStorage({
+      "corent:trustEvents": JSON.stringify({
+        good: basePickupTrustEvent,
+        bad: { id: "tev_bad", rentalIntentId: 42 }, // wrong type
+        partial: { id: "tev_partial" }, // missing required fields
+      }),
+      "corent:claimWindows": JSON.stringify({
+        good: baseClaimWindow,
+        bad: { id: "cw_bad" },
+      }),
+      "corent:claimReviews": JSON.stringify({
+        good: baseClaimReview,
+        bad: null,
+      }),
+      "corent:sellerProfileOverrides": JSON.stringify({
+        good: baseProfileOverride,
+        bad: { sellerId: 99 },
+      }),
+    });
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(await adapter.listTrustEvents()).toEqual([basePickupTrustEvent]);
+    expect(await adapter.listClaimWindows()).toEqual([baseClaimWindow]);
+    expect(await adapter.listClaimReviews()).toEqual([baseClaimReview]);
+    expect(await adapter.listSellerProfileOverrides()).toEqual([
+      baseProfileOverride,
+    ]);
+  });
+
+  it("throws LocalStorageWriteError on critical writes when storage rejects", async () => {
+    const storage = stubWindowWithStorage();
+    storage.setItem = vi.fn(() => {
+      throw new Error("QuotaExceededError");
+    });
+    const adapter = new LocalStoragePersistenceAdapter();
+    await expect(adapter.saveClaimWindow(baseClaimWindow)).rejects.toThrow(
+      /localStorage write failed/,
+    );
+    await expect(adapter.saveClaimReview(baseClaimReview)).rejects.toThrow(
+      /localStorage write failed/,
+    );
+    await expect(
+      adapter.saveSellerProfileOverride(baseProfileOverride),
+    ).rejects.toThrow(/localStorage write failed/);
+    await expect(adapter.saveTrustEvent(basePickupTrustEvent)).rejects.toThrow(
+      /localStorage write failed/,
+    );
+  });
+
+  it("deleteRentalIntent cascades to handoff/trust/claim records", async () => {
+    stubWindowWithStorage({
+      "corent:rentalIntents": JSON.stringify({
+        [baseRentalIntent.id]: baseRentalIntent,
+      }),
+      "corent:rentalEvents": JSON.stringify({
+        [baseRentalIntent.id]: [baseRentalEvent],
+      }),
+      "corent:handoffRecords": JSON.stringify({
+        [`${baseRentalIntent.id}:pickup`]: basePickupHandoff,
+      }),
+      "corent:trustEvents": JSON.stringify({
+        [basePickupTrustEvent.id]: basePickupTrustEvent,
+      }),
+      "corent:claimWindows": JSON.stringify({
+        [baseClaimWindow.id]: baseClaimWindow,
+      }),
+      "corent:claimReviews": JSON.stringify({
+        [baseClaimReview.id]: baseClaimReview,
+      }),
+    });
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    await adapter.deleteRentalIntent(baseRentalIntent.id);
+
+    expect(await adapter.getRentalIntent(baseRentalIntent.id)).toBeNull();
+    expect(await adapter.listRentalEvents(baseRentalIntent.id)).toEqual([]);
+    expect(
+      await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+    expect(
+      await adapter.getClaimWindowForRental(baseRentalIntent.id),
+    ).toBeNull();
+    expect(
+      await adapter.listClaimReviewsForRental(baseRentalIntent.id),
+    ).toEqual([]);
   });
 });
 

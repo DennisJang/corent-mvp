@@ -1,5 +1,19 @@
 // In-memory fallback. Used during SSR (no `window`) and as a base class
 // the localStorage adapter extends.
+//
+// Phase 1.10 invariants:
+//
+//   - Clone on save and on read for every collection. The adapter
+//     never returns a live reference to its internal state, so a
+//     caller mutating a returned object (or a stored fixture) cannot
+//     bypass service guards by editing the in-memory copy directly.
+//     `structuredClone` is used because every persisted shape in this
+//     module is plain JSON-serializable data.
+//   - TrustEvent saves are append-only. Re-saving the same id throws
+//     so the audit log cannot be silently overwritten.
+//   - `deleteRentalIntent` cascades to handoffs, trust events, claim
+//     windows, and claim reviews tied to the rental, matching the
+//     localStorage adapter's behavior.
 
 import type {
   ListingIntent,
@@ -24,6 +38,17 @@ function handoffKey(rentalIntentId: string, phase: HandoffPhase): string {
   return `${rentalIntentId}:${phase}`;
 }
 
+// Defensive clone for stored / returned values. Falls back to the
+// JSON round-trip when `structuredClone` is unavailable (older Node
+// or constrained sandboxes). Every persisted shape in this module is
+// plain JSON-serializable data, so the round-trip is faithful.
+function clone<T>(value: T): T {
+  if (typeof structuredClone === "function") {
+    return structuredClone(value);
+  }
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
 export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected rentalIntents = new Map<string, RentalIntent>();
   protected listingIntents = new Map<string, ListingIntent>();
@@ -36,128 +61,157 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected sellerProfileOverrides = new Map<string, SellerProfileOverride>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
-    this.rentalIntents.set(intent.id, intent);
+    this.rentalIntents.set(intent.id, clone(intent));
   }
   async getRentalIntent(id: string): Promise<RentalIntent | null> {
-    return this.rentalIntents.get(id) ?? null;
+    const found = this.rentalIntents.get(id);
+    return found ? clone(found) : null;
   }
   async listRentalIntents(): Promise<RentalIntent[]> {
-    return Array.from(this.rentalIntents.values());
+    return Array.from(this.rentalIntents.values()).map((v) => clone(v));
   }
   async deleteRentalIntent(id: string): Promise<void> {
     this.rentalIntents.delete(id);
     this.rentalEvents.delete(id);
+    // Cascade to trust / admin / handoff records tied to this rental.
+    for (const [k, v] of this.handoffRecords) {
+      if (v.rentalIntentId === id) this.handoffRecords.delete(k);
+    }
+    for (const [k, v] of this.trustEvents) {
+      if (v.rentalIntentId === id) this.trustEvents.delete(k);
+    }
+    for (const [k, v] of this.claimWindows) {
+      if (v.rentalIntentId === id) this.claimWindows.delete(k);
+    }
+    for (const [k, v] of this.claimReviews) {
+      if (v.rentalIntentId === id) this.claimReviews.delete(k);
+    }
   }
 
   async saveListingIntent(intent: ListingIntent): Promise<void> {
-    this.listingIntents.set(intent.id, intent);
+    this.listingIntents.set(intent.id, clone(intent));
   }
   async getListingIntent(id: string): Promise<ListingIntent | null> {
-    return this.listingIntents.get(id) ?? null;
+    const found = this.listingIntents.get(id);
+    return found ? clone(found) : null;
   }
   async listListingIntents(): Promise<ListingIntent[]> {
-    return Array.from(this.listingIntents.values());
+    return Array.from(this.listingIntents.values()).map((v) => clone(v));
   }
 
   async saveSearchIntent(intent: SearchIntent): Promise<void> {
-    this.searchIntents.unshift(intent);
+    this.searchIntents.unshift(clone(intent));
     this.searchIntents = this.searchIntents.slice(0, 10);
   }
   async getLatestSearchIntent(): Promise<SearchIntent | null> {
-    return this.searchIntents[0] ?? null;
+    const head = this.searchIntents[0];
+    return head ? clone(head) : null;
   }
   async listSearchIntents(): Promise<SearchIntent[]> {
-    return [...this.searchIntents];
+    return this.searchIntents.map((v) => clone(v));
   }
 
   async appendRentalEvent(event: RentalEvent): Promise<void> {
     const list = this.rentalEvents.get(event.rentalIntentId) ?? [];
-    list.push(event);
+    list.push(clone(event));
     this.rentalEvents.set(event.rentalIntentId, list);
   }
   async listRentalEvents(rentalIntentId: string): Promise<RentalEvent[]> {
-    return [...(this.rentalEvents.get(rentalIntentId) ?? [])];
+    return (this.rentalEvents.get(rentalIntentId) ?? []).map((v) => clone(v));
   }
 
   async saveHandoffRecord(record: HandoffRecord): Promise<void> {
-    this.handoffRecords.set(handoffKey(record.rentalIntentId, record.phase), record);
+    this.handoffRecords.set(
+      handoffKey(record.rentalIntentId, record.phase),
+      clone(record),
+    );
   }
   async getHandoffRecord(
     rentalIntentId: string,
     phase: HandoffPhase,
   ): Promise<HandoffRecord | null> {
-    return this.handoffRecords.get(handoffKey(rentalIntentId, phase)) ?? null;
+    const found = this.handoffRecords.get(handoffKey(rentalIntentId, phase));
+    return found ? clone(found) : null;
   }
   async listHandoffRecordsForRental(
     rentalIntentId: string,
   ): Promise<HandoffRecord[]> {
     const out: HandoffRecord[] = [];
     for (const r of this.handoffRecords.values()) {
-      if (r.rentalIntentId === rentalIntentId) out.push(r);
+      if (r.rentalIntentId === rentalIntentId) out.push(clone(r));
     }
     return out;
   }
 
   async saveTrustEvent(event: TrustEvent): Promise<void> {
-    this.trustEvents.set(event.id, event);
+    // Phase 1.10: append-only. Re-saving an existing id is a service-
+    // layer bug; throwing prevents silent audit corruption.
+    if (this.trustEvents.has(event.id)) {
+      throw new Error(`trust_event_duplicate_id: ${event.id}`);
+    }
+    this.trustEvents.set(event.id, clone(event));
   }
   async listTrustEventsForRental(rentalIntentId: string): Promise<TrustEvent[]> {
     const out: TrustEvent[] = [];
     for (const e of this.trustEvents.values()) {
-      if (e.rentalIntentId === rentalIntentId) out.push(e);
+      if (e.rentalIntentId === rentalIntentId) out.push(clone(e));
     }
     return out;
   }
   async listTrustEvents(): Promise<TrustEvent[]> {
-    return Array.from(this.trustEvents.values());
+    return Array.from(this.trustEvents.values()).map((v) => clone(v));
   }
 
   async saveClaimWindow(window: ClaimWindow): Promise<void> {
-    this.claimWindows.set(window.id, window);
+    this.claimWindows.set(window.id, clone(window));
   }
   async getClaimWindowForRental(
     rentalIntentId: string,
   ): Promise<ClaimWindow | null> {
     for (const w of this.claimWindows.values()) {
-      if (w.rentalIntentId === rentalIntentId) return w;
+      if (w.rentalIntentId === rentalIntentId) return clone(w);
     }
     return null;
   }
   async listClaimWindows(): Promise<ClaimWindow[]> {
-    return Array.from(this.claimWindows.values());
+    return Array.from(this.claimWindows.values()).map((v) => clone(v));
   }
 
   async saveClaimReview(review: ClaimReview): Promise<void> {
-    this.claimReviews.set(review.id, review);
+    this.claimReviews.set(review.id, clone(review));
   }
   async getClaimReview(id: string): Promise<ClaimReview | null> {
-    return this.claimReviews.get(id) ?? null;
+    const found = this.claimReviews.get(id);
+    return found ? clone(found) : null;
   }
   async listClaimReviewsForRental(
     rentalIntentId: string,
   ): Promise<ClaimReview[]> {
     const out: ClaimReview[] = [];
     for (const r of this.claimReviews.values()) {
-      if (r.rentalIntentId === rentalIntentId) out.push(r);
+      if (r.rentalIntentId === rentalIntentId) out.push(clone(r));
     }
     return out;
   }
   async listClaimReviews(): Promise<ClaimReview[]> {
-    return Array.from(this.claimReviews.values());
+    return Array.from(this.claimReviews.values()).map((v) => clone(v));
   }
 
   async saveSellerProfileOverride(
     override: SellerProfileOverride,
   ): Promise<void> {
-    this.sellerProfileOverrides.set(override.sellerId, override);
+    this.sellerProfileOverrides.set(override.sellerId, clone(override));
   }
   async getSellerProfileOverride(
     sellerId: string,
   ): Promise<SellerProfileOverride | null> {
-    return this.sellerProfileOverrides.get(sellerId) ?? null;
+    const found = this.sellerProfileOverrides.get(sellerId);
+    return found ? clone(found) : null;
   }
   async listSellerProfileOverrides(): Promise<SellerProfileOverride[]> {
-    return Array.from(this.sellerProfileOverrides.values());
+    return Array.from(this.sellerProfileOverrides.values()).map((v) =>
+      clone(v),
+    );
   }
 
   async clearAll(): Promise<void> {
