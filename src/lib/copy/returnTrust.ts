@@ -194,6 +194,34 @@ export const CLAIM_WINDOW_COPY = {
 } as const;
 
 // --------------------------------------------------------------
+// STOREFRONT_COPY — labels for the public seller storefront. The
+// surface is read-only and never implies booking/payment/deposit;
+// the visitor must follow an item link to interact with a listing.
+// --------------------------------------------------------------
+
+export const STOREFRONT_COPY = {
+  pageTag: "Seller storefront",
+  introTitle: "공개 프로필",
+  // Default seller intro shown when no per-seller copy is on file.
+  defaultIntro:
+    "이 셀러는 사기 전 며칠 살아보기 위한 물건을 함께 빌려줍니다.",
+  listingsHeading: "이 셀러의 물건",
+  emptyListings: "아직 등록된 물건이 없어요.",
+  trustHeading: "신뢰 이력",
+  // Visitor-facing fallback when a count summary cannot be computed.
+  trustEmpty: "공개 신뢰 이력이 아직 모이지 않았어요.",
+  // Read-only / no-action disclaimer that pairs with the claim window
+  // copy elsewhere — this surface never books, never charges.
+  readOnlyNote: "공개 정보만 표시돼요. 예약·결제는 물건 페이지에서 진행해요.",
+  // Fallback marker copy shown when `isFallback` is true (no Seller
+  // record). The reviewer must be able to tell this is not real
+  // persisted profile data.
+  fallbackTag: "프로필 일부만 등록됨",
+  fallbackHint:
+    "공식 프로필이 아직 등록되지 않아 공개 카드 정보만 보이는 상태예요.",
+} as const;
+
+// --------------------------------------------------------------
 // CLAIM_REVIEW_COPY — admin-side decision skeleton labels. No payout,
 // deposit, refund, or insurance words. The three decisions are
 // placeholder state — recording one does NOT trigger money movement.

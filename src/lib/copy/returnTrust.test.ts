@@ -6,6 +6,7 @@ import {
   CLAIM_WINDOW_COPY,
   HANDOFF_RITUAL_COPY,
   LISTING_CARD_COPY,
+  STOREFRONT_COPY,
   TRUST_SUMMARY_COPY,
   formatFromOneDayPrice,
   formatHandoffProgress,
@@ -214,6 +215,28 @@ describe("CLAIM_REVIEW_COPY", () => {
   it("avoids forbidden regulated-language tokens", () => {
     const all = Object.values(CLAIM_REVIEW_COPY).join(" ");
     for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+  });
+});
+
+describe("STOREFRONT_COPY", () => {
+  it("contains the documented headings and read-only disclaimer", () => {
+    expect(STOREFRONT_COPY.pageTag).toBe("Seller storefront");
+    expect(STOREFRONT_COPY.introTitle).toBe("공개 프로필");
+    expect(STOREFRONT_COPY.listingsHeading).toBe("이 셀러의 물건");
+    expect(STOREFRONT_COPY.trustHeading).toBe("신뢰 이력");
+    expect(STOREFRONT_COPY.readOnlyNote).toBe(
+      "공개 정보만 표시돼요. 예약·결제는 물건 페이지에서 진행해요.",
+    );
+    expect(STOREFRONT_COPY.fallbackTag).toBe("프로필 일부만 등록됨");
+  });
+  it("avoids forbidden regulated-language and payment-implementation tokens", () => {
+    const all = Object.values(STOREFRONT_COPY).join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
+    for (const t of ["토스페이먼츠", "stripe", "kakaopay", "payco"]) {
       expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
     }
   });
