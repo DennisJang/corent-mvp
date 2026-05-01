@@ -325,9 +325,181 @@ async function expectAdapterSupportsMvpEntities(
   ]);
 }
 
+function deepClone<T>(value: T): T {
+  return JSON.parse(JSON.stringify(value)) as T;
+}
+
+async function expectAdapterReturnsSnapshots(
+  adapter: PersistenceAdapter,
+): Promise<void> {
+  const rental = deepClone(baseRentalIntent);
+  const listing = deepClone(baseListingIntent);
+  const profile = deepClone(baseProfileOverride);
+  const intakeSession = deepClone(baseIntakeSession);
+  const intakeMessage = deepClone(baseIntakeMessage);
+  const intakeExtraction = deepClone(baseIntakeExtraction);
+  const rentalEvent = deepClone(baseRentalEvent);
+  const handoff = deepClone(basePickupHandoff);
+  const claimWindow = deepClone(baseClaimWindow);
+  const claimReview = deepClone(baseClaimReview);
+  const trustEvent = deepClone(basePickupTrustEvent);
+
+  await adapter.saveRentalIntent(rental);
+  await adapter.saveListingIntent(listing);
+  await adapter.saveSellerProfileOverride(profile);
+  await adapter.saveIntakeSession(intakeSession);
+  await adapter.appendIntakeMessage(intakeMessage);
+  await adapter.saveIntakeExtraction(intakeExtraction);
+  await adapter.appendRentalEvent(rentalEvent);
+  await adapter.saveHandoffRecord(handoff);
+  await adapter.saveClaimWindow(claimWindow);
+  await adapter.saveClaimReview(claimReview);
+  await adapter.saveTrustEvent(trustEvent);
+
+  // Clone-on-write / serialization-on-write: mutating caller-owned
+  // objects after save must not alter persisted state.
+  rental.status = "settled";
+  listing.item.name = "tampered after save";
+  profile.displayName = "tampered after save";
+  intakeSession.status = "draft_created";
+  intakeMessage.content = "tampered after save";
+  intakeExtraction.itemName = "tampered after save";
+  rentalEvent.reason = "tampered after save";
+  handoff.note = "tampered after save";
+  claimWindow.status = "closed_no_claim";
+  claimReview.status = "approved";
+  trustEvent.actor = "borrower";
+
+  expect((await adapter.getRentalIntent(baseRentalIntent.id))?.status).toBe(
+    baseRentalIntent.status,
+  );
+  expect(
+    (await adapter.getListingIntent(baseListingIntent.id))?.item.name,
+  ).toBe(baseListingIntent.item.name);
+  expect(
+    (
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId)
+    )?.displayName,
+  ).toBe(baseProfileOverride.displayName);
+  expect((await adapter.getIntakeSession(baseIntakeSession.id))?.status).toBe(
+    baseIntakeSession.status,
+  );
+  expect(
+    (await adapter.listIntakeMessagesForSession(baseIntakeSession.id))[0]
+      ?.content,
+  ).toBe(baseIntakeMessage.content);
+  expect(
+    (await adapter.getIntakeExtractionForSession(baseIntakeSession.id))
+      ?.itemName,
+  ).toBe(baseIntakeExtraction.itemName);
+  expect((await adapter.listRentalEvents(baseRentalIntent.id))[0]?.reason).toBe(
+    baseRentalEvent.reason,
+  );
+  expect(
+    (await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"))?.note,
+  ).toBe(basePickupHandoff.note);
+  expect(
+    (await adapter.getClaimWindowForRental(baseRentalIntent.id))?.status,
+  ).toBe(baseClaimWindow.status);
+  expect((await adapter.getClaimReview(baseClaimReview.id))?.status).toBe(
+    baseClaimReview.status,
+  );
+  expect(
+    (await adapter.listTrustEventsForRental(baseRentalIntent.id))[0]?.actor,
+  ).toBe(basePickupTrustEvent.actor);
+
+  // Clone-on-read / fresh-deserialization-on-read: mutating returned
+  // records must not alter a later read.
+  const returnedRental = await adapter.getRentalIntent(baseRentalIntent.id);
+  const returnedListing = await adapter.getListingIntent(baseListingIntent.id);
+  const returnedProfile = await adapter.getSellerProfileOverride(
+    baseProfileOverride.sellerId,
+  );
+  const returnedSession = await adapter.getIntakeSession(baseIntakeSession.id);
+  const returnedMessages = await adapter.listIntakeMessagesForSession(
+    baseIntakeSession.id,
+  );
+  const returnedExtraction = await adapter.getIntakeExtractionForSession(
+    baseIntakeSession.id,
+  );
+  const returnedEvents = await adapter.listRentalEvents(baseRentalIntent.id);
+  const returnedHandoff = await adapter.getHandoffRecord(
+    baseRentalIntent.id,
+    "pickup",
+  );
+  const returnedWindow = await adapter.getClaimWindowForRental(
+    baseRentalIntent.id,
+  );
+  const returnedReview = await adapter.getClaimReview(baseClaimReview.id);
+  const returnedTrustEvents = await adapter.listTrustEventsForRental(
+    baseRentalIntent.id,
+  );
+
+  returnedRental!.productName = "tampered on read";
+  returnedListing!.item.name = "tampered on read";
+  returnedProfile!.displayName = "tampered on read";
+  returnedSession!.status = "draft_created";
+  returnedMessages[0]!.content = "tampered on read";
+  returnedExtraction!.itemName = "tampered on read";
+  returnedEvents[0]!.reason = "tampered on read";
+  returnedHandoff!.note = "tampered on read";
+  returnedWindow!.status = "closed_no_claim";
+  returnedReview!.status = "approved";
+  returnedTrustEvents[0]!.actor = "borrower";
+
+  expect(
+    (await adapter.getRentalIntent(baseRentalIntent.id))?.productName,
+  ).toBe(baseRentalIntent.productName);
+  expect(
+    (await adapter.getListingIntent(baseListingIntent.id))?.item.name,
+  ).toBe(baseListingIntent.item.name);
+  expect(
+    (
+      await adapter.getSellerProfileOverride(baseProfileOverride.sellerId)
+    )?.displayName,
+  ).toBe(baseProfileOverride.displayName);
+  expect((await adapter.getIntakeSession(baseIntakeSession.id))?.status).toBe(
+    baseIntakeSession.status,
+  );
+  expect(
+    (await adapter.listIntakeMessagesForSession(baseIntakeSession.id))[0]
+      ?.content,
+  ).toBe(baseIntakeMessage.content);
+  expect(
+    (await adapter.getIntakeExtractionForSession(baseIntakeSession.id))
+      ?.itemName,
+  ).toBe(baseIntakeExtraction.itemName);
+  expect((await adapter.listRentalEvents(baseRentalIntent.id))[0]?.reason).toBe(
+    baseRentalEvent.reason,
+  );
+  expect(
+    (await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"))?.note,
+  ).toBe(basePickupHandoff.note);
+  expect(
+    (await adapter.getClaimWindowForRental(baseRentalIntent.id))?.status,
+  ).toBe(baseClaimWindow.status);
+  expect((await adapter.getClaimReview(baseClaimReview.id))?.status).toBe(
+    baseClaimReview.status,
+  );
+  expect(
+    (await adapter.listTrustEventsForRental(baseRentalIntent.id))[0]?.actor,
+  ).toBe(basePickupTrustEvent.actor);
+}
+
 afterEach(() => {
   vi.unstubAllGlobals();
   vi.resetModules();
+});
+
+describe("PersistenceAdapter snapshot contract", () => {
+  it("MemoryPersistenceAdapter returns snapshots for every durable collection", async () => {
+    await expectAdapterReturnsSnapshots(new MemoryPersistenceAdapter());
+  });
+
+  it("LocalStoragePersistenceAdapter returns fresh snapshots for every durable collection", async () => {
+    stubWindowWithStorage();
+    await expectAdapterReturnsSnapshots(new LocalStoragePersistenceAdapter());
+  });
 });
 
 describe("MemoryPersistenceAdapter", () => {
