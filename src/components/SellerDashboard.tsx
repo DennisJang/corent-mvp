@@ -10,6 +10,7 @@ import { useEffect, useMemo, useState } from "react";
 import { Badge } from "@/components/Badge";
 import { Button } from "@/components/Button";
 import { ChatToListingIntakeCard } from "@/components/ChatToListingIntakeCard";
+import { LocalDemoGuide } from "@/components/LocalDemoGuide";
 import { SellerDashboardStat } from "@/components/SellerDashboardStat";
 import { SellerProfileEditCard } from "@/components/SellerProfileEditCard";
 import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatusBadge";
@@ -427,6 +428,12 @@ export function SellerDashboard() {
 
   return (
     <>
+      <section className="border-b border-black">
+        <div className="container-dashboard py-12">
+          <LocalDemoGuide />
+        </div>
+      </section>
+
       <section className="border-b border-black">
         <div className="container-dashboard py-16">
           <div className="flex flex-col md:flex-row md:items-end md:justify-between gap-8">

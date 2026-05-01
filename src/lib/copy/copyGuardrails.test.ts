@@ -50,6 +50,7 @@ const USER_FACING_FILES = [
   "src/components/SellerStorefrontProfileOverlay.tsx",
   "src/components/SellerProfileEditCard.tsx",
   "src/components/ChatToListingIntakeCard.tsx",
+  "src/components/LocalDemoGuide.tsx",
   "src/components/intent/IntentStatusBadge.tsx",
   "src/components/intent/RentalIntentTimeline.tsx",
 ];
