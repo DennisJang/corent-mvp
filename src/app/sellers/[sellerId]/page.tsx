@@ -9,6 +9,7 @@
 import { notFound } from "next/navigation";
 import { PageShell } from "@/components/PageShell";
 import { SellerStorefront } from "@/components/SellerStorefront";
+import { publicListingService } from "@/lib/services/publicListingService";
 import {
   getStorefrontView,
   listStorefrontSellerIds,
@@ -26,10 +27,16 @@ export default async function SellerStorefrontPage({ params }: PageProps) {
   const { sellerId } = await params;
   const view = getStorefrontView(sellerId);
   if (!view) notFound();
+  // Phase 1.12: render listing cards through the safe public
+  // projection layer. Static products and approved persisted
+  // listings owned by this seller appear together; drafts and
+  // unapproved rows are filtered out by the mapper.
+  const publicListings =
+    await publicListingService.listPublicListingsForSeller(sellerId);
 
   return (
     <PageShell>
-      <SellerStorefront view={view} />
+      <SellerStorefront view={view} publicListings={publicListings} />
     </PageShell>
   );
 }

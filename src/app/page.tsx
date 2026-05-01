@@ -3,6 +3,7 @@ import { Button } from "@/components/Button";
 import { ProductCard } from "@/components/ProductCard";
 import { AISearchInput } from "@/components/AISearchInput";
 import { PRODUCTS } from "@/data/products";
+import { mapStaticProductToPublicListing } from "@/lib/services/publicListingService";
 
 const TRUST_POINTS = [
   {
@@ -29,7 +30,12 @@ const DURATIONS = [
 ];
 
 export default function LandingPage() {
-  const featured = PRODUCTS.slice(0, 3);
+  // Phase 1.12: render featured cards through the PublicListing
+  // projection so the landing page reads from the same safe shape as
+  // search and storefront. The slice still surfaces only static
+  // products on the home page (approved persisted listings appear on
+  // search / storefront).
+  const featured = PRODUCTS.slice(0, 3).map(mapStaticProductToPublicListing);
 
   return (
     <PageShell>
@@ -151,12 +157,12 @@ export default function LandingPage() {
             </Button>
           </div>
           <div className="grid grid-cols-1 md:grid-cols-3 gap-0 border-l border-[color:var(--ink-12)]">
-            {featured.map((p) => (
+            {featured.map((listing) => (
               <div
-                key={p.id}
+                key={listing.publicListingId}
                 className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px"
               >
-                <ProductCard product={p} />
+                <ProductCard listing={listing} />
               </div>
             ))}
           </div>

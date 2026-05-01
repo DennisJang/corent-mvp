@@ -5,11 +5,13 @@
 // duration and category live without leaving the page.
 
 import { useRouter, useSearchParams } from "next/navigation";
-import { useMemo } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ProductCard } from "@/components/ProductCard";
 import { CATEGORIES, CATEGORY_LABEL } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
+import type { PublicListing } from "@/domain/listings";
 import { PRODUCTS } from "@/data/products";
+import { publicListingService } from "@/lib/services/publicListingService";
 import { searchService } from "@/lib/services/searchService";
 import { formatKRW } from "@/lib/format";
 
@@ -32,14 +34,54 @@ export function SearchResults() {
   const durationDays = intent?.durationDays ?? 3;
   const durationKey = durationDaysToKey(durationDays);
 
+  // Phase 1.12: read public listings via the projection layer.
+  // Initial paint uses the static-product projections so SSR /
+  // first render is stable; the effect below re-fetches via
+  // `listPublicListings()` so any approved persisted listings
+  // become visible after hydration.
+  const initialListings = useMemo<PublicListing[]>(
+    () =>
+      PRODUCTS.map((p) => ({
+        publicListingId: `product:${p.id}`,
+        source: "static_product",
+        sourceId: p.id,
+        detailHref: `/items/${p.id}`,
+        sellerId: p.sellerId,
+        sellerName: p.sellerName,
+        title: p.name,
+        category: p.category,
+        summary: p.summary,
+        pickupArea: p.pickupArea,
+        prices: { "1d": p.prices["1d"], "3d": p.prices["3d"], "7d": p.prices["7d"] },
+        estimatedValue: p.estimatedValue,
+        hero: { initials: p.hero.initials },
+        condition: p.condition,
+        isPersistedProjection: false,
+      })),
+    [],
+  );
+  const [listings, setListings] =
+    useState<PublicListing[]>(initialListings);
+
+  useEffect(() => {
+    let cancelled = false;
+    publicListingService.listPublicListings().then((all) => {
+      if (cancelled) return;
+      setListings(all);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   const filtered = useMemo(() => {
-    return PRODUCTS.filter((p) => {
-      if (category && p.category !== category) return false;
-      if (intent?.priceMax && p.prices[durationKey] > intent.priceMax)
+    return listings.filter((l) => {
+      if (category && l.category !== category) return false;
+      if (intent?.priceMax && l.prices[durationKey] > intent.priceMax)
         return false;
       return true;
     });
-  }, [category, intent, durationKey]);
+  }, [listings, category, intent, durationKey]);
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params.toString());
@@ -197,12 +239,12 @@ export function SearchResults() {
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border-l border-[color:var(--ink-12)]">
-            {filtered.map((p) => (
+            {filtered.map((listing) => (
               <div
-                key={p.id}
+                key={listing.publicListingId}
                 className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px"
               >
-                <ProductCard product={p} />
+                <ProductCard listing={listing} />
               </div>
             ))}
           </div>

@@ -21,11 +21,18 @@ import { Badge } from "@/components/Badge";
 import { ProductCard } from "@/components/ProductCard";
 import { SellerStorefrontProfileOverlay } from "@/components/SellerStorefrontProfileOverlay";
 import { SellerStorefrontTrustBlock } from "@/components/SellerStorefrontTrustBlock";
+import type { PublicListing } from "@/domain/listings";
 import { STOREFRONT_COPY } from "@/lib/copy/returnTrust";
 import type { StorefrontView } from "@/lib/services/storefrontService";
 
-export function SellerStorefront({ view }: { view: StorefrontView }) {
-  const { seller, products, isFallback } = view;
+export function SellerStorefront({
+  view,
+  publicListings,
+}: {
+  view: StorefrontView;
+  publicListings: PublicListing[];
+}) {
+  const { seller, isFallback } = view;
   const intro = seller.trustNote ?? STOREFRONT_COPY.defaultIntro;
 
   return (
@@ -70,10 +77,10 @@ export function SellerStorefront({ view }: { view: StorefrontView }) {
         <header className="flex items-baseline justify-between border-b border-black pb-3 mb-6">
           <h2 className="text-h3">{STOREFRONT_COPY.listingsHeading}</h2>
           <span className="text-caption text-[color:var(--ink-60)]">
-            {products.length}건
+            {publicListings.length}건
           </span>
         </header>
-        {products.length === 0 ? (
+        {publicListings.length === 0 ? (
           <div className="border border-dashed border-[color:var(--line-dashed)] px-6 py-12">
             <p className="text-body text-[color:var(--ink-60)]">
               {STOREFRONT_COPY.emptyListings}
@@ -81,8 +88,8 @@ export function SellerStorefront({ view }: { view: StorefrontView }) {
           </div>
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-8">
-            {products.map((p) => (
-              <ProductCard key={p.id} product={p} />
+            {publicListings.map((listing) => (
+              <ProductCard key={listing.publicListingId} listing={listing} />
             ))}
           </div>
         )}
