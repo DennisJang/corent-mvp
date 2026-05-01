@@ -157,6 +157,25 @@ export function formatHandoffProgress(
 }
 
 // --------------------------------------------------------------
+// TRUST_SUMMARY_COPY — labels for the count-only trust history view
+// surfaced on the seller dashboard. Process language only — no
+// scoring, no badges, no payment / regulated terms.
+// --------------------------------------------------------------
+
+export const TRUST_SUMMARY_COPY = {
+  sectionTitle: "신뢰 이력",
+  successfulReturns: "정상 반납 이력",
+  pickupConfirmedCount: "픽업 체크 완료",
+  returnConfirmedCount: "반납 체크 완료",
+  conditionCheckCompletedCount: "상태 확인 완료",
+  accountStandingLabel: "계정 상태",
+  // accountStanding values are mapped to safe display copy here.
+  accountStandingNormal: "정상",
+  accountStandingLimited: "제한",
+  accountStandingBlocked: "차단",
+} as const;
+
+// --------------------------------------------------------------
 // CLAIM_WINDOW_COPY — short labels for the post-return inspection
 // window. Open / no claim / with claim only; no payout language.
 // --------------------------------------------------------------

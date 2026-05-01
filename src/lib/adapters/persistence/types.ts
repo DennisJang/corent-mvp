@@ -8,7 +8,11 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
-import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
+import type {
+  HandoffPhase,
+  HandoffRecord,
+  TrustEvent,
+} from "@/domain/trust";
 
 export interface PersistenceAdapter {
   // RentalIntent
@@ -42,6 +46,15 @@ export interface PersistenceAdapter {
   listHandoffRecordsForRental(
     rentalIntentId: string,
   ): Promise<HandoffRecord[]>;
+
+  // TrustEvent — append-only log of trust-relevant actions. Save is
+  // upsert by id (idempotent re-saves are safe), but the service
+  // layer treats this collection as append-only. There is no delete
+  // here; only `clearAll` removes events. See
+  // docs/corent_return_trust_layer.md §"Phase 1.4".
+  saveTrustEvent(event: TrustEvent): Promise<void>;
+  listTrustEventsForRental(rentalIntentId: string): Promise<TrustEvent[]>;
+  listTrustEvents(): Promise<TrustEvent[]>;
 
   // Wipe all CoRent-MVP-owned data. Used by the dashboard's "로컬 데이터
   // 비우기" affordance and by tests that need a clean slate.

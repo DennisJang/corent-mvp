@@ -13,7 +13,12 @@ import { SellerDashboardStat } from "@/components/SellerDashboardStat";
 import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatusBadge";
 import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
-import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
+import {
+  EMPTY_USER_TRUST_SUMMARY,
+  type HandoffPhase,
+  type HandoffRecord,
+  type UserTrustSummary,
+} from "@/domain/trust";
 import { CURRENT_SELLER } from "@/data/mockSellers";
 import { MOCK_RENTAL_INTENTS } from "@/data/mockRentalIntents";
 import { LISTED_ITEMS, type ListedItem } from "@/data/dashboard";
@@ -23,9 +28,11 @@ import { getPersistence } from "@/lib/adapters/persistence";
 import { handoffService } from "@/lib/services/handoffService";
 import { rentalService } from "@/lib/services/rentalService";
 import { listingService } from "@/lib/services/listingService";
+import { trustEventService } from "@/lib/services/trustEvents";
 import {
   APPROVAL_COPY,
   HANDOFF_RITUAL_COPY,
+  TRUST_SUMMARY_COPY,
   formatHandoffProgress,
 } from "@/lib/copy/returnTrust";
 import {
@@ -60,6 +67,10 @@ export function SellerDashboard() {
   const [handoffByKey, setHandoffByKey] = useState<Map<string, HandoffRecord>>(
     () => new Map(),
   );
+  const [trustSummary, setTrustSummary] = useState<UserTrustSummary>(() => ({
+    userId: CURRENT_SELLER.id,
+    ...EMPTY_USER_TRUST_SUMMARY,
+  }));
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -86,14 +97,23 @@ export function SellerDashboard() {
       if (rec) next.set(handoffMapKey(rental.id, phase), rec);
     }
     setHandoffByKey(next);
+    // Phase 1.4: count-only trust history. The summarizer never
+    // changes accountStanding automatically — that is admin-driven
+    // in a future PR.
+    setTrustSummary(
+      await trustEventService.summarizeUserTrust(session.sellerId),
+    );
   };
 
   // Read persisted state once on mount. Effect-setState is intentional —
   // localStorage is an external system and Next/React's data-fetch hooks
-  // aren't available without a server route here.
+  // aren't available without a server route here. The empty deps array
+  // is intentional too: `refresh` closes over only the mock session
+  // (which is stable per-render in MVP) and per-call persistence reads.
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect
     refresh().finally(() => setLoaded(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
   // Filter to the current seller's rentals only. Without this, a borrower
@@ -132,6 +152,18 @@ export function SellerDashboard() {
   const failures = useMemo(
     () => failureRows(effectiveRentals),
     [effectiveRentals],
+  );
+
+  const trustSummaryHasContent = useMemo(
+    () =>
+      trustSummary.successfulReturns +
+        trustSummary.pickupConfirmedCount +
+        trustSummary.returnConfirmedCount +
+        trustSummary.conditionCheckCompletedCount +
+        trustSummary.disputesOpened +
+        trustSummary.damageReportsAgainst >
+      0,
+    [trustSummary],
   );
 
   // Handoff rows derive from the seller's REAL rentals only — the
@@ -410,6 +442,14 @@ export function SellerDashboard() {
         </div>
       </section>
 
+      {trustSummaryHasContent ? (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-12">
+            <TrustSummaryBlock summary={trustSummary} />
+          </div>
+        </section>
+      ) : null}
+
       {handoffRows.length > 0 ? (
         <section className="border-b border-black">
           <div className="container-dashboard py-16">
@@ -621,6 +661,54 @@ function ActiveBlock({
         </ul>
       )}
     </section>
+  );
+}
+
+function TrustSummaryBlock({ summary }: { summary: UserTrustSummary }) {
+  const standingLabel =
+    summary.accountStanding === "limited"
+      ? TRUST_SUMMARY_COPY.accountStandingLimited
+      : summary.accountStanding === "blocked"
+        ? TRUST_SUMMARY_COPY.accountStandingBlocked
+        : TRUST_SUMMARY_COPY.accountStandingNormal;
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <h3 className="text-title">{TRUST_SUMMARY_COPY.sectionTitle}</h3>
+        <span className="text-caption text-[color:var(--ink-60)]">
+          {TRUST_SUMMARY_COPY.accountStandingLabel}: {standingLabel}
+        </span>
+      </header>
+      <div className="grid grid-cols-2 sm:grid-cols-4 border-l border-[color:var(--ink-12)]">
+        <TrustStat
+          label={TRUST_SUMMARY_COPY.successfulReturns}
+          value={summary.successfulReturns}
+        />
+        <TrustStat
+          label={TRUST_SUMMARY_COPY.pickupConfirmedCount}
+          value={summary.pickupConfirmedCount}
+        />
+        <TrustStat
+          label={TRUST_SUMMARY_COPY.returnConfirmedCount}
+          value={summary.returnConfirmedCount}
+        />
+        <TrustStat
+          label={TRUST_SUMMARY_COPY.conditionCheckCompletedCount}
+          value={summary.conditionCheckCompletedCount}
+        />
+      </div>
+    </section>
+  );
+}
+
+function TrustStat({ label, value }: { label: string; value: number }) {
+  return (
+    <div className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px px-6 py-6 flex flex-col gap-2">
+      <span className="text-caption text-[color:var(--ink-60)]">{label}</span>
+      <span className="text-h3 tabular-nums">
+        {value.toLocaleString("ko-KR")}
+      </span>
+    </div>
   );
 }
 

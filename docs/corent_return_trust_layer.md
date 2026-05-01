@@ -424,6 +424,112 @@ deliberate Phase 2 decision.
 - **No state machine changes.** `rentalIntentMachine.ts` is untouched.
 - **No new dependencies.**
 
+### Phase 1.4 — TrustEvent Persistence + Basic Trust Summary (THIS PR)
+
+After this PR, `TrustEvent` records are persisted in both adapters,
+the seller's count-only trust history is computed from those events,
+the seller dashboard surfaces a compact `신뢰 이력` summary, and the
+seller-side handoff flow emits a single trust event on the
+false-to-true confirmation transition. Everything is still
+local persistence + mock auth — there is no scoring, no automatic
+tier upgrade, no automatic blocking, no server DB.
+
+**What is now implemented:**
+
+- **TrustEvent persistence** in
+  [`src/lib/adapters/persistence/types.ts`](../src/lib/adapters/persistence/types.ts)
+  + both adapters. Three new methods on `PersistenceAdapter`:
+  - `saveTrustEvent(event)` — upsert by `event.id`. The collection is
+    treated as append-only by the service layer; the adapter accepts
+    re-saves so a future replay path remains idempotent.
+  - `listTrustEventsForRental(rentalIntentId)` — scoped read.
+  - `listTrustEvents()` — full list. Used by `summarizeUserTrust`.
+  - `clearAll()` now wipes the new `corent:trustEvents` key alongside
+    the existing CoRent keys. Unrelated localStorage entries remain
+    untouched.
+- **trustEventService orchestration** in
+  [`src/lib/services/trustEvents.ts`](../src/lib/services/trustEvents.ts):
+  - `recordTrustEvent(input)` — validates via `createTrustEvent`,
+    persists, returns the event.
+  - `listTrustEventsForRental(id)` — passthrough.
+  - `listTrustEventsForUser(userId)` — joins rentals + events and
+    returns events for any rental where the user is seller OR
+    borrower. Returns `[]` for empty `userId`.
+  - `summarizeUserTrust(userId)` — loads everything once and returns
+    a `UserTrustSummary`. Convenience over calling
+    `listTrustEventsForUser` + `summarizeTrustEvents` separately.
+- **Pure summary helper** `summarizeTrustEvents(events, rentalById,
+  userId)` — count-only, scoped to seller-or-borrower rentals,
+  `damageReportsAgainst` further scoped to rentals where the user is
+  the seller. **`accountStanding` is always `"normal"`** in the MVP
+  output; the summarizer never auto-changes it.
+- **New domain types** in
+  [`src/domain/trust.ts`](../src/domain/trust.ts):
+  - `AccountStanding` = `"normal" | "limited" | "blocked"` (manual
+    admin state, never auto-set).
+  - `UserTrustSummary` — count-only view: `successfulReturns`,
+    `pickupConfirmedCount`, `returnConfirmedCount`,
+    `conditionCheckCompletedCount`, `disputesOpened`,
+    `damageReportsAgainst`, `accountStanding`.
+  - `EMPTY_USER_TRUST_SUMMARY` — zeros + `"normal"`.
+- **Handoff → TrustEvent integration** in
+  [`src/lib/services/rentalService.ts`](../src/lib/services/rentalService.ts):
+  `recordSellerHandoff` now emits exactly one TrustEvent when the
+  seller-side `confirmedBySeller` flag flips from false to true:
+  - `pickup` phase → `pickup_evidence_recorded`
+  - `return` phase → `return_evidence_recorded`
+  Re-saves of an already-confirmed record do NOT emit again. Calls
+  with `confirm=false` do not emit. Calls that fail ownership
+  validation do not emit (ownership runs before any persistence).
+- **Seller dashboard `신뢰 이력` block** in
+  [`src/components/SellerDashboard.tsx`](../src/components/SellerDashboard.tsx):
+  a compact 4-tile section (정상 반납 이력 / 픽업 체크 완료 /
+  반납 체크 완료 / 상태 확인 완료) appears only when the seller has
+  any non-zero count. Header shows
+  `계정 상태: 정상` (or `제한` / `차단` if a future admin PR ever
+  changes the value). The block uses existing design tokens — no new
+  colors, no charts, no badges.
+- **Shared copy** in
+  [`src/lib/copy/returnTrust.ts`](../src/lib/copy/returnTrust.ts):
+  new `TRUST_SUMMARY_COPY` group covering the section title, the
+  four count labels, the account-standing label, and the three
+  standing values. Copy tests scan every new string against the
+  regulated-language deny-list.
+
+**Mapping to the existing `RentalIntent` state machine:**
+
+Unchanged. Trust events live alongside the machine in the
+`rental_events`-like spirit but with a typed event-type vocabulary
+and a derived per-user summary view. No status renames, no new
+transitions, no new statuses.
+
+**What is intentionally NOT implemented:**
+
+- **No scoring, no tier upgrades, no unlock-level inference, no
+  automatic account-standing change.** `accountStanding` is hard-
+  coded to `"normal"` in every code path. Moving a user out of it
+  requires a future admin write surface.
+- **No real authentication.** The dashboard still resolves the mock
+  seller via `getMockSellerSession()`.
+- **No server DB, no ingest endpoint.** All persistence remains
+  local (memory + localStorage). The deny-by-default Phase 2
+  Supabase schema is still dev-only.
+- **No upload, no media storage, no file picker.**
+- **No automatic damage judgment.** `condition_issue_reported` is a
+  countable event today; routing it into admin review is Phase 3.
+- **No claim window timer.** `ClaimWindow` types still exist;
+  enforcement is Phase 3.
+- **No payment, no deposit, no soft hold, no escrow, no settlement
+  payout, no insurance / guarantee / coverage / safe-escrow
+  language.**
+- **No seller storefront.**
+- **No automatic emission of trust events** outside the seller
+  handoff transition this PR added. Borrower-side, admin-side, and
+  state-machine-driven emissions are deferred.
+- **No state machine changes.** `rentalIntentMachine.ts` is
+  untouched.
+- **No new dependencies.**
+
 ### Phase 2 — later PR (gated by review)
 
 - Wire the Return Ritual checklist into the rental flow (pickup

@@ -28,6 +28,7 @@ import {
   createHandoffRecord,
   handoffService,
 } from "@/lib/services/handoffService";
+import { trustEventService } from "@/lib/services/trustEvents";
 import {
   approveRentalIntent,
   blockSettlement,
@@ -188,6 +189,25 @@ export const rentalService = {
       confirm,
     );
     await getPersistence().saveHandoffRecord(next);
+
+    // Phase 1.4 integration: when seller-side confirmation flips
+    // from false to true, emit one TrustEvent. Re-saves of an
+    // already-confirmed record do NOT emit again. Borrower-side and
+    // failure paths emit their own events in future PRs.
+    const sellerJustConfirmed =
+      next.confirmedBySeller && existing?.confirmedBySeller !== true;
+    if (sellerJustConfirmed) {
+      await trustEventService.recordTrustEvent({
+        rentalIntentId: next.rentalIntentId,
+        type:
+          phase === "pickup"
+            ? "pickup_evidence_recorded"
+            : "return_evidence_recorded",
+        actor: "seller",
+        handoffPhase: phase,
+      });
+    }
+
     return next;
   },
 

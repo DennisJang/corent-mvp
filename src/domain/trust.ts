@@ -234,6 +234,50 @@ export type UserTrustProfile = {
 };
 
 // --------------------------------------------------------------
+// AccountStanding — manual administrative state for a user. The
+// summary helper NEVER changes this automatically; only an admin
+// surface (future PR) may move a user out of `"normal"`. The MVP
+// posture is "process trust, not enforcement" — automatic blocking
+// is explicitly out of scope.
+// --------------------------------------------------------------
+
+export type AccountStanding = "normal" | "limited" | "blocked";
+
+// --------------------------------------------------------------
+// UserTrustSummary — count-only derived view, intentionally smaller
+// than `UserTrustProfile`. There is no scoring, no tier, no unlock
+// level here. Phase 1.4 ships counts of known TrustEvent types so
+// surfaces (seller dashboard, future storefront) can render simple
+// "how many returns has this user successfully completed?" hints.
+//
+// The `userId` is the user the summary is computed for. Counts are
+// scoped to events whose rental has the user as seller OR borrower.
+// `damageReportsAgainst` is scoped to events tied to rentals where
+// the user is the SELLER (i.e. the issue was reported about them).
+// --------------------------------------------------------------
+
+export type UserTrustSummary = {
+  userId: string;
+  successfulReturns: number;
+  pickupConfirmedCount: number;
+  returnConfirmedCount: number;
+  conditionCheckCompletedCount: number;
+  disputesOpened: number;
+  damageReportsAgainst: number;
+  accountStanding: AccountStanding;
+};
+
+export const EMPTY_USER_TRUST_SUMMARY: Omit<UserTrustSummary, "userId"> = {
+  successfulReturns: 0,
+  pickupConfirmedCount: 0,
+  returnConfirmedCount: 0,
+  conditionCheckCompletedCount: 0,
+  disputesOpened: 0,
+  damageReportsAgainst: 0,
+  accountStanding: "normal",
+};
+
+// --------------------------------------------------------------
 // Re-export RentalIntentStatus so callers can write
 // `import { type RentalIntentStatus } from "@/domain/trust";` when
 // they need both trust types and rental status without two imports.

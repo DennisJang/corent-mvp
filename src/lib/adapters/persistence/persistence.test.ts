@@ -6,7 +6,7 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
-import type { HandoffRecord } from "@/domain/trust";
+import type { HandoffRecord, TrustEvent } from "@/domain/trust";
 import { LocalStoragePersistenceAdapter } from "@/lib/adapters/persistence/localStorageAdapter";
 import { MemoryPersistenceAdapter } from "@/lib/adapters/persistence/memoryAdapter";
 import type { PersistenceAdapter } from "@/lib/adapters/persistence/types";
@@ -147,6 +147,33 @@ const baseReturnHandoff: HandoffRecord = {
   updatedAt: "2026-04-29T00:03:00.000Z",
 };
 
+const basePickupTrustEvent: TrustEvent = {
+  id: "tev_pickup_test",
+  rentalIntentId: baseRentalIntent.id,
+  type: "pickup_evidence_recorded",
+  at: "2026-04-29T00:04:00.000Z",
+  actor: "seller",
+  handoffPhase: "pickup",
+};
+
+const baseReturnTrustEvent: TrustEvent = {
+  id: "tev_return_test",
+  rentalIntentId: baseRentalIntent.id,
+  type: "return_evidence_recorded",
+  at: "2026-04-29T00:05:00.000Z",
+  actor: "seller",
+  handoffPhase: "return",
+  notes: "정상 반납",
+};
+
+const otherRentalTrustEvent: TrustEvent = {
+  id: "tev_other_test",
+  rentalIntentId: "ri_other",
+  type: "seller_approved_request",
+  at: "2026-04-29T00:06:00.000Z",
+  actor: "seller",
+};
+
 function makeRentalIntent(overrides: Partial<RentalIntent> = {}): RentalIntent {
   return {
     ...baseRentalIntent,
@@ -268,6 +295,7 @@ describe("MemoryPersistenceAdapter", () => {
 
     await expectAdapterSupportsMvpEntities(adapter);
     await adapter.saveHandoffRecord(basePickupHandoff);
+    await adapter.saveTrustEvent(basePickupTrustEvent);
     await adapter.clearAll();
 
     expect(await adapter.listRentalIntents()).toEqual([]);
@@ -281,6 +309,10 @@ describe("MemoryPersistenceAdapter", () => {
     expect(
       await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
     ).toBeNull();
+    expect(await adapter.listTrustEvents()).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
   });
 
   it("saves, reads, lists, and updates handoff records by (rental, phase)", async () => {
@@ -321,6 +353,44 @@ describe("MemoryPersistenceAdapter", () => {
     expect(
       await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
     ).toHaveLength(2);
+  });
+
+  it("saves, lists, and scopes trust events per rental", async () => {
+    const adapter = new MemoryPersistenceAdapter();
+
+    expect(await adapter.listTrustEvents()).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+
+    await adapter.saveTrustEvent(basePickupTrustEvent);
+    await adapter.saveTrustEvent(baseReturnTrustEvent);
+    await adapter.saveTrustEvent(otherRentalTrustEvent);
+
+    const all = await adapter.listTrustEvents();
+    expect(all).toHaveLength(3);
+    const forRental = await adapter.listTrustEventsForRental(
+      baseRentalIntent.id,
+    );
+    expect(forRental).toHaveLength(2);
+    expect(forRental).toEqual(
+      expect.arrayContaining([basePickupTrustEvent, baseReturnTrustEvent]),
+    );
+    expect(
+      await adapter.listTrustEventsForRental("ri_other"),
+    ).toEqual([otherRentalTrustEvent]);
+
+    // Re-saving the same id overwrites instead of duplicating.
+    const updated: TrustEvent = {
+      ...basePickupTrustEvent,
+      notes: "updated note",
+    };
+    await adapter.saveTrustEvent(updated);
+    const after = await adapter.listTrustEventsForRental(baseRentalIntent.id);
+    expect(after).toHaveLength(2);
+    expect(after).toEqual(
+      expect.arrayContaining([updated, baseReturnTrustEvent]),
+    );
   });
 });
 
@@ -424,6 +494,9 @@ describe("LocalStoragePersistenceAdapter", () => {
       "corent:handoffRecords": JSON.stringify({
         [`${baseRentalIntent.id}:pickup`]: basePickupHandoff,
       }),
+      "corent:trustEvents": JSON.stringify({
+        [basePickupTrustEvent.id]: basePickupTrustEvent,
+      }),
       unrelated: "keep me",
     });
     const adapter = new LocalStoragePersistenceAdapter();
@@ -441,6 +514,10 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(
       await adapter.getHandoffRecord(baseRentalIntent.id, "pickup"),
     ).toBeNull();
+    expect(await adapter.listTrustEvents()).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
   });
 
   it("saves and reads handoff records keyed by (rental, phase)", async () => {
@@ -482,6 +559,32 @@ describe("LocalStoragePersistenceAdapter", () => {
     expect(
       await adapter.listHandoffRecordsForRental(baseRentalIntent.id),
     ).toHaveLength(2);
+  });
+
+  it("saves, lists, and scopes trust events per rental", async () => {
+    stubWindowWithStorage();
+    const adapter = new LocalStoragePersistenceAdapter();
+
+    expect(await adapter.listTrustEvents()).toEqual([]);
+    expect(
+      await adapter.listTrustEventsForRental(baseRentalIntent.id),
+    ).toEqual([]);
+
+    await adapter.saveTrustEvent(basePickupTrustEvent);
+    await adapter.saveTrustEvent(baseReturnTrustEvent);
+    await adapter.saveTrustEvent(otherRentalTrustEvent);
+
+    expect(await adapter.listTrustEvents()).toHaveLength(3);
+    const forRental = await adapter.listTrustEventsForRental(
+      baseRentalIntent.id,
+    );
+    expect(forRental).toHaveLength(2);
+    expect(forRental).toEqual(
+      expect.arrayContaining([basePickupTrustEvent, baseReturnTrustEvent]),
+    );
+    expect(
+      await adapter.listTrustEventsForRental("ri_other"),
+    ).toEqual([otherRentalTrustEvent]);
   });
 });
 

@@ -5,6 +5,7 @@ import {
   CLAIM_WINDOW_COPY,
   HANDOFF_RITUAL_COPY,
   LISTING_CARD_COPY,
+  TRUST_SUMMARY_COPY,
   formatFromOneDayPrice,
   formatHandoffProgress,
   formatPriceBreakdown,
@@ -159,6 +160,29 @@ describe("formatHandoffProgress", () => {
   });
   it("respects a custom total", () => {
     expect(formatHandoffProgress("pickup", 2, 10)).toBe("픽업 체크 2/10");
+  });
+});
+
+describe("TRUST_SUMMARY_COPY", () => {
+  it("contains the documented strings", () => {
+    expect(TRUST_SUMMARY_COPY.sectionTitle).toBe("신뢰 이력");
+    expect(TRUST_SUMMARY_COPY.successfulReturns).toBe("정상 반납 이력");
+    expect(TRUST_SUMMARY_COPY.pickupConfirmedCount).toBe("픽업 체크 완료");
+    expect(TRUST_SUMMARY_COPY.returnConfirmedCount).toBe("반납 체크 완료");
+    expect(TRUST_SUMMARY_COPY.conditionCheckCompletedCount).toBe(
+      "상태 확인 완료",
+    );
+    expect(TRUST_SUMMARY_COPY.accountStandingLabel).toBe("계정 상태");
+    expect(TRUST_SUMMARY_COPY.accountStandingNormal).toBe("정상");
+    expect(TRUST_SUMMARY_COPY.accountStandingLimited).toBe("제한");
+    expect(TRUST_SUMMARY_COPY.accountStandingBlocked).toBe("차단");
+  });
+
+  it("avoids forbidden regulated-language tokens", () => {
+    const all = Object.values(TRUST_SUMMARY_COPY).join(" ");
+    for (const t of FORBIDDEN_TOKENS) {
+      expect(all.toLowerCase().includes(t.toLowerCase())).toBe(false);
+    }
   });
 });
 

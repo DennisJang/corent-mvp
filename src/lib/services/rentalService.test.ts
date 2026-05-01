@@ -255,4 +255,76 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
     expect(pickup?.phase).toBe("pickup");
     expect(ret?.phase).toBe("return");
   });
+
+  it("emits exactly one TrustEvent on the seller-confirm transition (pickup)", async () => {
+    const r = await makeRequestedRental();
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+    );
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("pickup_evidence_recorded");
+    expect(events[0]?.actor).toBe("seller");
+    expect(events[0]?.handoffPhase).toBe("pickup");
+  });
+
+  it("does NOT re-emit on a subsequent seller-confirm save", async () => {
+    const r = await makeRequestedRental();
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+    );
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      { checks: { mainUnit: true } },
+    );
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(events).toHaveLength(1);
+  });
+
+  it("does NOT emit when confirm=false", async () => {
+    const r = await makeRequestedRental();
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+      false,
+    );
+    expect(await getPersistence().listTrustEventsForRental(r.id)).toEqual([]);
+  });
+
+  it("emits return_evidence_recorded for the return phase", async () => {
+    const r = await makeRequestedRental();
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "return",
+      SELLER_ID,
+      FULL_PICKUP_PATCH,
+    );
+    const events = await getPersistence().listTrustEventsForRental(r.id);
+    expect(events).toHaveLength(1);
+    expect(events[0]?.type).toBe("return_evidence_recorded");
+    expect(events[0]?.handoffPhase).toBe("return");
+  });
+
+  it("does NOT emit when ownership is rejected", async () => {
+    const r = await makeRequestedRental();
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "pickup",
+        BORROWER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    expect(await getPersistence().listTrustEventsForRental(r.id)).toEqual([]);
+  });
 });

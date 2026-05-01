@@ -7,7 +7,11 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
-import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
+import type {
+  HandoffPhase,
+  HandoffRecord,
+  TrustEvent,
+} from "@/domain/trust";
 import type { PersistenceAdapter } from "./types";
 
 // Composite key for handoff records: `${rentalIntentId}:${phase}`. The
@@ -23,6 +27,7 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
   protected searchIntents: SearchIntent[] = [];
   protected rentalEvents = new Map<string, RentalEvent[]>();
   protected handoffRecords = new Map<string, HandoffRecord>();
+  protected trustEvents = new Map<string, TrustEvent>();
 
   async saveRentalIntent(intent: RentalIntent): Promise<void> {
     this.rentalIntents.set(intent.id, intent);
@@ -87,11 +92,26 @@ export class MemoryPersistenceAdapter implements PersistenceAdapter {
     return out;
   }
 
+  async saveTrustEvent(event: TrustEvent): Promise<void> {
+    this.trustEvents.set(event.id, event);
+  }
+  async listTrustEventsForRental(rentalIntentId: string): Promise<TrustEvent[]> {
+    const out: TrustEvent[] = [];
+    for (const e of this.trustEvents.values()) {
+      if (e.rentalIntentId === rentalIntentId) out.push(e);
+    }
+    return out;
+  }
+  async listTrustEvents(): Promise<TrustEvent[]> {
+    return Array.from(this.trustEvents.values());
+  }
+
   async clearAll(): Promise<void> {
     this.rentalIntents.clear();
     this.listingIntents.clear();
     this.searchIntents = [];
     this.rentalEvents.clear();
     this.handoffRecords.clear();
+    this.trustEvents.clear();
   }
 }

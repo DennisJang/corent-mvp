@@ -9,7 +9,11 @@ import type {
   RentalIntent,
   SearchIntent,
 } from "@/domain/intents";
-import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
+import type {
+  HandoffPhase,
+  HandoffRecord,
+  TrustEvent,
+} from "@/domain/trust";
 import type { PersistenceAdapter } from "./types";
 
 const KEYS = {
@@ -18,6 +22,7 @@ const KEYS = {
   searchIntents: "corent:searchIntents",
   rentalEvents: "corent:rentalEvents",
   handoffRecords: "corent:handoffRecords",
+  trustEvents: "corent:trustEvents",
 } as const;
 
 // Composite key inside the handoff blob: `${rentalIntentId}:${phase}`.
@@ -148,6 +153,22 @@ export class LocalStoragePersistenceAdapter implements PersistenceAdapter {
     return Object.values(all).filter(
       (r) => r.rentalIntentId === rentalIntentId,
     );
+  }
+
+  async saveTrustEvent(event: TrustEvent): Promise<void> {
+    const all = readJson<Record<string, TrustEvent>>(KEYS.trustEvents, {});
+    all[event.id] = event;
+    writeJson(KEYS.trustEvents, all);
+  }
+  async listTrustEventsForRental(rentalIntentId: string): Promise<TrustEvent[]> {
+    const all = readJson<Record<string, TrustEvent>>(KEYS.trustEvents, {});
+    return Object.values(all).filter(
+      (e) => e.rentalIntentId === rentalIntentId,
+    );
+  }
+  async listTrustEvents(): Promise<TrustEvent[]> {
+    const all = readJson<Record<string, TrustEvent>>(KEYS.trustEvents, {});
+    return Object.values(all);
   }
 
   async clearAll(): Promise<void> {
