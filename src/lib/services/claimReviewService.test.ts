@@ -47,11 +47,11 @@ async function makeRentalAtReturnConfirmed(): Promise<RentalIntent> {
     borrowerName: "DEMO 빌리는사람",
   });
   r = await rentalService.approveRequest(r, SELLER_ID);
-  r = await rentalService.startPayment(r);
-  r = await rentalService.confirmPayment(r);
-  r = await rentalService.confirmPickup(r);
-  r = await rentalService.startReturn(r);
-  r = await rentalService.confirmReturn(r);
+  r = await rentalService.startPayment(r, SELLER_ID);
+  r = await rentalService.confirmPayment(r, SELLER_ID);
+  r = await rentalService.confirmPickup(r, SELLER_ID);
+  r = await rentalService.startReturn(r, SELLER_ID);
+  r = await rentalService.confirmReturn(r, SELLER_ID);
   return r;
 }
 
@@ -495,8 +495,8 @@ describe("openClaimWindow terminal-state guard", () => {
     // openClaimWindow without throwing.
     const r = await makeRentalAtReturnConfirmed();
     await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
-    const ready = await rentalService.readySettlement(r);
-    await rentalService.settle(ready);
+    const ready = await rentalService.readySettlement(r, SELLER_ID);
+    await rentalService.settle(ready, SELLER_ID);
     // Calling openClaimWindow on the settled rental returns the
     // existing window (now closed_no_claim) without trying to open a
     // new one.

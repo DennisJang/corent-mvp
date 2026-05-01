@@ -17,6 +17,7 @@ import { rentalService } from "./rentalService";
 const SELLER_ID = "seller_jisu";
 const BORROWER_ID = "borrower_minho";
 const STRANGER_ID = "stranger_x";
+const ADMIN_ID = "admin_dev_ops";
 
 async function makeRequestedRental(): Promise<RentalIntent> {
   return rentalService.create({
@@ -41,8 +42,8 @@ async function makeRequestedRental(): Promise<RentalIntent> {
 async function makePaidRental(): Promise<RentalIntent> {
   let r = await makeRequestedRental();
   r = await rentalService.approveRequest(r, SELLER_ID);
-  r = await rentalService.startPayment(r);
-  r = await rentalService.confirmPayment(r);
+  r = await rentalService.startPayment(r, SELLER_ID);
+  r = await rentalService.confirmPayment(r, SELLER_ID);
   return r;
 }
 
@@ -50,9 +51,22 @@ async function makePaidRental(): Promise<RentalIntent> {
 // handoff is allowed.
 async function makeReturnPendingRental(): Promise<RentalIntent> {
   let r = await makePaidRental();
-  r = await rentalService.confirmPickup(r);
-  r = await rentalService.startReturn(r);
+  r = await rentalService.confirmPickup(r, SELLER_ID);
+  r = await rentalService.startReturn(r, SELLER_ID);
   return r;
+}
+
+async function makeReturnConfirmedRental(): Promise<RentalIntent> {
+  let r = await makeReturnPendingRental();
+  r = await rentalService.confirmReturn(r, SELLER_ID);
+  return r;
+}
+
+async function makeSettlementReadyRental(): Promise<RentalIntent> {
+  const { claimReviewService } = await import("./claimReviewService");
+  const r = await makeReturnConfirmedRental();
+  await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+  return rentalService.readySettlement(r, SELLER_ID);
 }
 
 beforeEach(async () => {
@@ -264,8 +278,8 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
       SELLER_ID,
       FULL_PICKUP_PATCH,
     );
-    r = await rentalService.confirmPickup(r);
-    r = await rentalService.startReturn(r);
+    r = await rentalService.confirmPickup(r, SELLER_ID);
+    r = await rentalService.startReturn(r, SELLER_ID);
     await rentalService.recordSellerHandoff(
       r.id,
       "return",
@@ -456,7 +470,7 @@ describe("rentalService — canonical writes ignore caller-supplied intent field
     // record is at `seller_approved`; the transition must succeed using
     // the canonical status.
     const forged = { ...approved, status: "paid" as const };
-    const next = await rentalService.startPayment(forged);
+    const next = await rentalService.startPayment(forged, SELLER_ID);
     expect(next.status).toBe("payment_pending");
   });
 
@@ -484,6 +498,172 @@ describe("rentalService — canonical writes ignore caller-supplied intent field
 });
 
 // --------------------------------------------------------------
+// Rental lifecycle actor-awareness.
+//
+// Remaining happy-path lifecycle writes are shared local-MVP actions:
+// either rental party may drive them, while strangers / empty actors
+// are rejected against the canonical persisted rental. Chaos/admin
+// helpers require an explicit dev-ops id and reject normal rental
+// parties so UI actors cannot accidentally use them.
+// --------------------------------------------------------------
+
+describe("rentalService — actor-aware happy-path lifecycle transitions", () => {
+  it("seller party can complete the full local happy path with explicit actor ids", async () => {
+    let r = await makeRequestedRental();
+    r = await rentalService.approveRequest(r, SELLER_ID);
+    r = await rentalService.startPayment(r, SELLER_ID);
+    expect(r.status).toBe("payment_pending");
+    r = await rentalService.confirmPayment(r, SELLER_ID);
+    expect(r.status).toBe("paid");
+    r = await rentalService.confirmPickup(r, SELLER_ID);
+    expect(r.status).toBe("pickup_confirmed");
+    r = await rentalService.startReturn(r, SELLER_ID);
+    expect(r.status).toBe("return_pending");
+    r = await rentalService.confirmReturn(r, SELLER_ID);
+    expect(r.status).toBe("return_confirmed");
+
+    const { claimReviewService } = await import("./claimReviewService");
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+
+    r = await rentalService.readySettlement(r, SELLER_ID);
+    expect(r.status).toBe("settlement_ready");
+    r = await rentalService.settle(r, SELLER_ID);
+    expect(r.status).toBe("settled");
+  });
+
+  it("borrower party can drive party-allowed lifecycle transitions after seller approval", async () => {
+    let r = await makeRequestedRental();
+    r = await rentalService.approveRequest(r, SELLER_ID);
+    r = await rentalService.startPayment(r, BORROWER_ID);
+    r = await rentalService.confirmPayment(r, BORROWER_ID);
+    r = await rentalService.confirmPickup(r, BORROWER_ID);
+    r = await rentalService.startReturn(r, BORROWER_ID);
+    r = await rentalService.confirmReturn(r, BORROWER_ID);
+
+    const { claimReviewService } = await import("./claimReviewService");
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+
+    r = await rentalService.readySettlement(r, BORROWER_ID);
+    r = await rentalService.settle(r, BORROWER_ID);
+    expect(r.status).toBe("settled");
+  });
+
+  it("rejects stranger and empty actors before lifecycle writes persist", async () => {
+    const r = await makeRequestedRental();
+    const approved = await rentalService.approveRequest(r, SELLER_ID);
+    await expect(
+      rentalService.startPayment(approved, STRANGER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    await expect(
+      rentalService.startPayment(approved, ""),
+    ).rejects.toBeInstanceOf(OwnershipError);
+
+    const stored = await rentalService.get(r.id);
+    expect(stored?.status).toBe("seller_approved");
+  });
+});
+
+describe("rentalService — admin/dev-ops lifecycle helpers", () => {
+  it("failPayment requires explicit admin/dev-ops actor id", async () => {
+    let r = await makeRequestedRental();
+    r = await rentalService.approveRequest(r, SELLER_ID);
+    r = await rentalService.startPayment(r, SELLER_ID);
+
+    await expect(
+      rentalService.failPayment(r, SELLER_ID, "seller_try"),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    await expect(
+      rentalService.failPayment(r, BORROWER_ID, "borrower_try"),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    await expect(rentalService.failPayment(r, "")).rejects.toThrow(
+      /admin_actor_required/,
+    );
+
+    const failed = await rentalService.failPayment(r, ADMIN_ID, "card_declined");
+    expect(failed.status).toBe("payment_failed");
+  });
+
+  it("missPickup / overdue / block are admin/dev-ops only", async () => {
+    const paid = await makePaidRental();
+    await expect(
+      rentalService.missPickup(paid, SELLER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    await expect(rentalService.missPickup(paid, "")).rejects.toThrow(
+      /admin_actor_required/,
+    );
+    const missed = await rentalService.missPickup(paid, ADMIN_ID);
+    expect(missed.status).toBe("pickup_missed");
+
+    const returnPending = await makeReturnPendingRental();
+    await expect(
+      rentalService.overdue(returnPending, BORROWER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    const overdue = await rentalService.overdue(returnPending, ADMIN_ID);
+    expect(overdue.status).toBe("return_overdue");
+
+    const settlementReady = await makeSettlementReadyRental();
+    await expect(
+      rentalService.block(settlementReady, SELLER_ID, "seller_try"),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    await expect(rentalService.block(settlementReady, "")).rejects.toThrow(
+      /admin_actor_required/,
+    );
+    const blocked = await rentalService.block(
+      settlementReady,
+      ADMIN_ID,
+      "manual_admin_hold",
+    );
+    expect(blocked.status).toBe("settlement_blocked");
+  });
+});
+
+describe("rentalService — damage / dispute actor awareness", () => {
+  it("damage accepts seller or borrower and rejects stranger", async () => {
+    let sellerCase = await makeReturnPendingRental();
+    sellerCase = await rentalService.damage(sellerCase, SELLER_ID);
+    expect(sellerCase.status).toBe("damage_reported");
+
+    let borrowerCase = await makeReturnPendingRental();
+    borrowerCase = await rentalService.damage(borrowerCase, BORROWER_ID);
+    expect(borrowerCase.status).toBe("damage_reported");
+    const borrowerEvents = await getPersistence().listTrustEventsForRental(
+      borrowerCase.id,
+    );
+    expect(
+      borrowerEvents.find((e) => e.type === "condition_issue_reported")?.actor,
+    ).toBe("borrower");
+
+    const strangerCase = await makeReturnPendingRental();
+    await expect(
+      rentalService.damage(strangerCase, STRANGER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+  });
+
+  it("dispute accepts seller or borrower and rejects stranger", async () => {
+    let sellerCase = await makeSettlementReadyRental();
+    sellerCase = await rentalService.dispute(
+      sellerCase,
+      SELLER_ID,
+      "seller_dispute",
+    );
+    expect(sellerCase.status).toBe("dispute_opened");
+
+    let borrowerCase = await makeSettlementReadyRental();
+    borrowerCase = await rentalService.dispute(
+      borrowerCase,
+      BORROWER_ID,
+      "borrower_dispute",
+    );
+    expect(borrowerCase.status).toBe("dispute_opened");
+
+    const strangerCase = await makeSettlementReadyRental();
+    await expect(
+      rentalService.dispute(strangerCase, STRANGER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+  });
+});
+
+// --------------------------------------------------------------
 // Settlement gating (Phase 1.7).
 //
 // `confirmReturn` opens the post-return claim window automatically.
@@ -495,14 +675,14 @@ describe("rentalService — canonical writes ignore caller-supplied intent field
 describe("rentalService — settlement is gated by the claim window", () => {
   async function makeReturnConfirmedRental(): Promise<RentalIntent> {
     let r = await makeReturnPendingRental();
-    r = await rentalService.confirmReturn(r);
+    r = await rentalService.confirmReturn(r, SELLER_ID);
     return r;
   }
 
   it("readySettlement is BLOCKED while the claim window is open", async () => {
     const r = await makeReturnConfirmedRental();
     expect(r.status).toBe("return_confirmed");
-    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+    await expect(rentalService.readySettlement(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_window_open/,
     );
     const stored = await rentalService.get(r.id);
@@ -511,7 +691,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
 
   it("settle is BLOCKED directly even if readySettlement is skipped", async () => {
     const r = await makeReturnConfirmedRental();
-    await expect(rentalService.settle(r)).rejects.toThrow(
+    await expect(rentalService.settle(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_window_open/,
     );
   });
@@ -520,7 +700,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
     const { claimReviewService } = await import("./claimReviewService");
     const r = await makeReturnConfirmedRental();
     await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
-    const ready = await rentalService.readySettlement(r);
+    const ready = await rentalService.readySettlement(r, SELLER_ID);
     expect(ready.status).toBe("settlement_ready");
   });
 
@@ -528,7 +708,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
     const { claimReviewService } = await import("./claimReviewService");
     const r = await makeReturnConfirmedRental();
     await claimReviewService.openClaim(r.id, SELLER_ID, "흠집 1건");
-    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+    await expect(rentalService.readySettlement(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_review_unresolved/,
     );
   });
@@ -546,7 +726,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
       "needs_review",
       "founder@example.com",
     );
-    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+    await expect(rentalService.readySettlement(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_review_unresolved/,
     );
   });
@@ -564,7 +744,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
       "rejected",
       "founder@example.com",
     );
-    const ready = await rentalService.readySettlement(r);
+    const ready = await rentalService.readySettlement(r, SELLER_ID);
     expect(ready.status).toBe("settlement_ready");
   });
 
@@ -581,7 +761,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
       "approved",
       "founder@example.com",
     );
-    const ready = await rentalService.readySettlement(r);
+    const ready = await rentalService.readySettlement(r, SELLER_ID);
     expect(ready.status).toBe("settlement_ready");
   });
 
@@ -625,7 +805,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
     });
     const reasonBefore = await rentalService.settlementBlockReason(r.id);
     expect(reasonBefore).toBe("claim_review_missing");
-    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+    await expect(rentalService.readySettlement(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_review_missing/,
     );
   });
@@ -639,7 +819,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
       status: "closed_with_claim",
       closedAt: "2026-04-29T01:00:00.000Z",
     });
-    await expect(rentalService.settle(r)).rejects.toThrow(
+    await expect(rentalService.settle(r, SELLER_ID)).rejects.toThrow(
       /settlement_blocked: claim_review_missing/,
     );
   });
@@ -656,7 +836,7 @@ describe("rentalService — settlement is gated by the claim window", () => {
 describe("rentalService.damage emits condition_issue_reported", () => {
   it("increments damageReportsAgainst on the seller summary", async () => {
     let r = await makeReturnPendingRental();
-    r = await rentalService.damage(r);
+    r = await rentalService.damage(r, SELLER_ID);
     expect(r.status).toBe("damage_reported");
     const { trustEventService } = await import("./trustEvents");
     const summary = await trustEventService.summarizeUserTrust(SELLER_ID);

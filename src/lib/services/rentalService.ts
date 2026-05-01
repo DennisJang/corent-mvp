@@ -40,7 +40,9 @@ import type { RentalEvent, RentalIntent, RentalIntentStatus } from "@/domain/int
 import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import { getProductById } from "@/data/products";
 import {
+  OwnershipError,
   assertRentalBorrowerIs,
+  assertRentalParty,
   assertRentalSellerIs,
 } from "@/lib/auth/guards";
 import { getPersistence } from "@/lib/adapters/persistence";
@@ -121,6 +123,27 @@ function assertHandoffPhaseAllowed(
   if (!allowed.has(status)) {
     throw new Error(
       `handoff_phase_not_allowed_for_status: cannot record ${phase} handoff while rental is ${status}`,
+    );
+  }
+}
+
+function assertDevOpsActor(
+  intent: Pick<RentalIntent, "id" | "sellerId" | "borrowerId">,
+  actorAdminId: string,
+): void {
+  // Local MVP / dev-tools boundary only: a non-empty id is the
+  // explicit signal that this call came from an admin/dev-ops surface.
+  // We also reject the known rental parties so normal seller/renter
+  // UI actors cannot accidentally drive chaos/admin transitions.
+  // Real admin role verification must move to server-resolved auth
+  // before any external production lifecycle writes use these helpers.
+  if (typeof actorAdminId !== "string" || actorAdminId.length === 0) {
+    throw new Error("admin_actor_required");
+  }
+  if (actorAdminId === intent.sellerId || actorAdminId === intent.borrowerId) {
+    throw new OwnershipError(
+      "rental_party_mismatch",
+      `Rental party cannot perform admin/dev-ops transition on rental ${intent.id}.`,
     );
   }
 }
@@ -413,16 +436,24 @@ export const rentalService = {
     return next;
   },
 
-  async startPayment(intent: IntentLike): Promise<RentalIntent> {
+  async startPayment(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const session = await mockPaymentAdapter.createSession(canonical);
     const r = markPaymentPending(canonical, session.sessionId);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async confirmPayment(intent: IntentLike): Promise<RentalIntent> {
+  async confirmPayment(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     if (canonical.payment.sessionId) {
       const result = await mockPaymentAdapter.confirmPayment(
         canonical.payment.sessionId,
@@ -438,22 +469,34 @@ export const rentalService = {
     return persistAndEmit(r);
   },
 
-  async confirmPickup(intent: IntentLike): Promise<RentalIntent> {
+  async confirmPickup(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const r = confirmPickup(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async startReturn(intent: IntentLike): Promise<RentalIntent> {
+  async startReturn(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const r = markReturnPending(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async confirmReturn(intent: IntentLike): Promise<RentalIntent> {
+  async confirmReturn(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const r = confirmReturn(canonical);
     if (!r.ok) throw new Error(r.message);
     const next = await persistAndEmit(r);
@@ -467,8 +510,15 @@ export const rentalService = {
 
   // Settlement gate (Phase 1.7): blocks while a claim window is open
   // or its review is unresolved. See `assertSettlementNotBlockedByClaim`.
-  async readySettlement(intent: IntentLike): Promise<RentalIntent> {
+  async readySettlement(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    // Beta-mock rule: either rental party may advance this local
+    // skeleton. Future production should narrow settlement readiness
+    // to a server-side system/platform actor after real payments exist.
+    assertRentalParty(canonical, actorUserId);
     await assertSettlementNotBlockedByClaim(canonical.id);
     const r = markSettlementReady(canonical);
     if (!r.ok) throw new Error(r.message);
@@ -477,8 +527,15 @@ export const rentalService = {
 
   // Settlement gate also applies here so the gate cannot be bypassed
   // by skipping `readySettlement`.
-  async settle(intent: IntentLike): Promise<RentalIntent> {
+  async settle(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    // Beta-mock rule: either rental party may advance this local
+    // skeleton. Future production should narrow settlement execution
+    // to a server-side system/platform actor after real payments exist.
+    assertRentalParty(canonical, actorUserId);
     await assertSettlementNotBlockedByClaim(canonical.id);
     const r = mockSettle(canonical);
     if (!r.ok) throw new Error(r.message);
@@ -513,27 +570,41 @@ export const rentalService = {
   // so a stale caller cannot resurrect old state.
   async failPayment(
     intent: IntentLike,
+    actorAdminId: string,
     reason?: string,
   ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertDevOpsActor(canonical, actorAdminId);
     const r = markPaymentFailed(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async missPickup(intent: IntentLike): Promise<RentalIntent> {
+  async missPickup(
+    intent: IntentLike,
+    actorAdminId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertDevOpsActor(canonical, actorAdminId);
     const r = markPickupMissed(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async overdue(intent: IntentLike): Promise<RentalIntent> {
+  async overdue(
+    intent: IntentLike,
+    actorAdminId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertDevOpsActor(canonical, actorAdminId);
     const r = markReturnOverdue(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async damage(intent: IntentLike): Promise<RentalIntent> {
+  async damage(
+    intent: IntentLike,
+    actorUserId: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const r = reportDamage(canonical);
     if (!r.ok) throw new Error(r.message);
     const next = await persistAndEmit(r);
@@ -544,19 +615,29 @@ export const rentalService = {
     await trustEventService.recordTrustEvent({
       rentalIntentId: next.id,
       type: "condition_issue_reported",
-      actor: "seller",
+      actor: actorUserId === canonical.borrowerId ? "borrower" : "seller",
       handoffPhase: "return",
     });
     return next;
   },
-  async dispute(intent: IntentLike, reason?: string): Promise<RentalIntent> {
+  async dispute(
+    intent: IntentLike,
+    actorUserId: string,
+    reason?: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertRentalParty(canonical, actorUserId);
     const r = openDispute(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async block(intent: IntentLike, reason?: string): Promise<RentalIntent> {
+  async block(
+    intent: IntentLike,
+    actorAdminId: string,
+    reason?: string,
+  ): Promise<RentalIntent> {
     const canonical = await loadCanonical(intent);
+    assertDevOpsActor(canonical, actorAdminId);
     const r = blockSettlement(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);

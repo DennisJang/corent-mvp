@@ -397,25 +397,25 @@ export function SellerDashboard() {
     try {
       switch (intent.status) {
         case "seller_approved":
-          await rentalService.startPayment(intent);
+          await rentalService.startPayment(intent, session.sellerId);
           break;
         case "payment_pending":
-          await rentalService.confirmPayment(intent);
+          await rentalService.confirmPayment(intent, session.sellerId);
           break;
         case "paid":
-          await rentalService.confirmPickup(intent);
+          await rentalService.confirmPickup(intent, session.sellerId);
           break;
         case "pickup_confirmed":
-          await rentalService.startReturn(intent);
+          await rentalService.startReturn(intent, session.sellerId);
           break;
         case "return_pending":
-          await rentalService.confirmReturn(intent);
+          await rentalService.confirmReturn(intent, session.sellerId);
           break;
         case "return_confirmed":
-          await rentalService.readySettlement(intent);
+          await rentalService.readySettlement(intent, session.sellerId);
           break;
         case "settlement_ready":
-          await rentalService.settle(intent);
+          await rentalService.settle(intent, session.sellerId);
           break;
       }
       await refresh();
