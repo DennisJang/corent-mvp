@@ -2,20 +2,40 @@
 // payment adapter, and persistence. UI components should call this — never
 // the adapters or state machine directly.
 //
+// Trust-flow hardening (Phase 1.7):
+//
+//   - Every lifecycle write reloads the canonical rental by id BEFORE
+//     authorization or status checks. The caller-supplied
+//     `RentalIntent` shape is treated as a hint only — its fields are
+//     never trusted for `sellerId`, `borrowerId`, or `status`. A
+//     forged or stale object still fails ownership / transition
+//     validation against the canonical persisted record.
+//   - `recordSellerHandoff` enforces that the canonical rental is in
+//     the right phase for the supplied `phase` (pickup vs return).
+//     Recording a pickup handoff against a freshly-requested rental
+//     is rejected.
+//   - `readySettlement` and `settle` are gated on the post-return
+//     claim window: a window in `open` status, or a window
+//     `closed_with_claim` whose review has not reached a final
+//     decision (`approved` or `rejected`), blocks settlement.
+//
 // Seller approval / decline:
 //   `approveRequest(intent, actorUserId)` and
 //   `declineRequest(intent, actorUserId, reason?)` are the canonical
-//   entry points for the seller-approval-before-payment flow. They run
-//   `assertRentalSellerIs` from `src/lib/auth/guards.ts` BEFORE the state
-//   machine transition, so a non-seller actor cannot mutate the rental
-//   even if the UI is bypassed.
+//   entry points for the seller-approval-before-payment flow. They
+//   reload by id, run `assertRentalSellerIs` against the canonical
+//   record, and only then run the state machine transition. A
+//   foreign actor cannot mutate the rental even if they reach this
+//   code path with a forged object.
 //
 //   The legacy `approve(intent)` and `cancel(intent, by)` methods stay
-//   for back-compat with older callers. New code MUST use the
-//   actor-aware variants. See docs/mvp_security_guardrails.md §6 and
+//   for back-compat with older callers but now also reload canonical
+//   so a stale caller cannot overwrite newer persisted state. New
+//   code MUST use the actor-aware variants. See
+//   docs/mvp_security_guardrails.md §6 and
 //   docs/corent_return_trust_layer.md §10 for migration rules.
 
-import type { RentalIntent } from "@/domain/intents";
+import type { RentalEvent, RentalIntent, RentalIntentStatus } from "@/domain/intents";
 import type { HandoffPhase, HandoffRecord } from "@/domain/trust";
 import {
   assertRentalBorrowerIs,
@@ -50,13 +70,90 @@ import {
   reportDamage,
 } from "@/lib/stateMachines/rentalIntentMachine";
 
-async function persistAndEmit<R extends { intent: RentalIntent; event: { id: string; rentalIntentId: string; fromStatus: string | null; toStatus: string; at: string } }>(
+// Caller-supplied input shapes for hardened writes. The signature
+// keeps `RentalIntent` for back-compat with existing callers, but the
+// implementation only reads `id` and ignores every other field.
+type IntentLike = string | { id: string };
+
+function intentId(input: IntentLike): string {
+  return typeof input === "string" ? input : input.id;
+}
+
+async function loadCanonical(input: IntentLike): Promise<RentalIntent> {
+  const id = intentId(input);
+  if (!id) throw new Error("rental_not_found");
+  const stored = await getPersistence().getRentalIntent(id);
+  if (!stored) throw new Error("rental_not_found");
+  return stored;
+}
+
+async function persistAndEmit<R extends { intent: RentalIntent; event: RentalEvent }>(
   result: R,
 ): Promise<RentalIntent> {
   const store = getPersistence();
   await store.saveRentalIntent(result.intent);
-  await store.appendRentalEvent(result.event as Parameters<typeof store.appendRentalEvent>[0]);
+  await store.appendRentalEvent(result.event);
   return result.intent;
+}
+
+// Phase rules for seller-side handoff records. The canonical rental
+// status decides whether a pickup or return checklist is meaningful.
+// Mirrors the `handoffPhaseForStatus` rule on the dashboard: the
+// dashboard never renders a row outside these statuses, and the
+// service must reject writes that bypass the UI.
+const PICKUP_PHASE_STATUSES: ReadonlySet<RentalIntentStatus> = new Set<RentalIntentStatus>([
+  "paid",
+  "pickup_confirmed",
+]);
+const RETURN_PHASE_STATUSES: ReadonlySet<RentalIntentStatus> = new Set<RentalIntentStatus>([
+  "return_pending",
+  "return_confirmed",
+]);
+
+function assertHandoffPhaseAllowed(
+  status: RentalIntentStatus,
+  phase: HandoffPhase,
+): void {
+  const allowed =
+    phase === "pickup" ? PICKUP_PHASE_STATUSES : RETURN_PHASE_STATUSES;
+  if (!allowed.has(status)) {
+    throw new Error(
+      `handoff_phase_not_allowed_for_status: cannot record ${phase} handoff while rental is ${status}`,
+    );
+  }
+}
+
+// Settlement gate. Returns null if settlement may proceed; throws
+// otherwise. Settlement is blocked while:
+//   - the post-return claim window is still `open`, or
+//   - the window is `closed_with_claim` and the corresponding
+//     `ClaimReview` has not reached a final decision (`approved` or
+//     `rejected`). `needs_review` and `open` count as unresolved.
+//
+// A rental that has no claim window at all (legacy / unusual paths)
+// is allowed to proceed — the gate exists to prevent settlement from
+// silently bypassing an opened window, not to require a window to
+// exist for every rental.
+async function assertSettlementNotBlockedByClaim(
+  rentalIntentId: string,
+): Promise<void> {
+  const window = await claimReviewService.getClaimWindowForRental(
+    rentalIntentId,
+  );
+  if (!window) return;
+  if (window.status === "open") {
+    throw new Error("settlement_blocked: claim_window_open");
+  }
+  if (window.status === "closed_no_claim") return;
+  // closed_with_claim → require a final review decision.
+  const reviews =
+    await claimReviewService.listClaimReviewsForRental(rentalIntentId);
+  const unresolved = reviews.find(
+    (r) => r.status === "open" || r.status === "needs_review",
+  );
+  if (unresolved) {
+    throw new Error("settlement_blocked: claim_review_unresolved");
+  }
 }
 
 export const rentalService = {
@@ -73,29 +170,33 @@ export const rentalService = {
     return getPersistence().getRentalIntent(id);
   },
 
-  // Legacy: trusts the caller to be the seller. New code must use
-  // `approveRequest(intent, actorUserId)` instead.
-  async approve(intent: RentalIntent): Promise<RentalIntent> {
-    const r = approveRentalIntent(intent);
+  // Legacy: trusts the caller. New code must use `approveRequest`.
+  // Hardened to reload canonical so stale callers cannot overwrite
+  // newer persisted state.
+  async approve(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = approveRentalIntent(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  // Seller approves a pending request. Verifies the actor is the
-  // rental's seller via `assertRentalSellerIs` BEFORE the state
-  // machine transition, so a foreign actor cannot mutate the rental
-  // even if they reach this code path.
+  // Seller approves a pending request. Reloads the canonical rental
+  // by id, runs `assertRentalSellerIs` against the canonical
+  // `sellerId`, and only then runs the state machine transition.
+  // The caller-supplied `intent` is a hint — its `sellerId`, `status`,
+  // and other fields are NEVER read for authorization or branching.
   //
-  // Throws OwnershipError when actorUserId is not the rental's seller.
-  // Throws Error("invalid_transition: …") when the rental is not in a
-  // status from which it can be approved (the state machine's
-  // `ALLOWED_TRANSITIONS` decides; today this is `requested`).
+  // Throws `Error("rental_not_found")` if the id has no persisted record.
+  // Throws `OwnershipError` when actorUserId is not the canonical seller.
+  // Throws `Error("invalid_transition: …")` when the rental is not in a
+  // status from which it can be approved.
   async approveRequest(
-    intent: RentalIntent,
+    intent: IntentLike,
     actorUserId: string,
   ): Promise<RentalIntent> {
-    assertRentalSellerIs(intent, actorUserId);
-    const r = approveRentalIntent(intent);
+    const canonical = await loadCanonical(intent);
+    assertRentalSellerIs(canonical, actorUserId);
+    const r = approveRentalIntent(canonical);
     if (!r.ok) throw new Error(`invalid_transition: ${r.message}`);
     return persistAndEmit(r);
   },
@@ -105,34 +206,27 @@ export const rentalService = {
   // `docs/corent_return_trust_layer.md §5`, decline maps to
   // `seller_cancelled`.
   //
-  // Throws OwnershipError when actorUserId is not the rental's seller.
-  // Throws Error("invalid_transition: …") on a status that cannot move
-  // to `seller_cancelled`.
-  //
-  // Migration point: a future PR can add a `reason` parameter and
-  // plumb it through to the emitted RentalEvent. That requires
-  // extending `cancelRentalIntent` in
-  // `src/lib/stateMachines/rentalIntentMachine.ts` to accept an
-  // optional reason, which is intentionally out of scope for this PR.
+  // Reloads canonical before authorization and transition checks.
   async declineRequest(
-    intent: RentalIntent,
+    intent: IntentLike,
     actorUserId: string,
   ): Promise<RentalIntent> {
-    assertRentalSellerIs(intent, actorUserId);
-    const r = cancelRentalIntent(intent, "seller");
+    const canonical = await loadCanonical(intent);
+    assertRentalSellerIs(canonical, actorUserId);
+    const r = cancelRentalIntent(canonical, "seller");
     if (!r.ok) throw new Error(`invalid_transition: ${r.message}`);
     return persistAndEmit(r);
   },
 
-  // Borrower cancels their own pending / pre-pickup request. Verifies
-  // the actor is the rental's borrower. Throws OwnershipError or
-  // invalid_transition on mismatch.
+  // Borrower cancels their own pending / pre-pickup request. Reloads
+  // canonical before authorization and transition checks.
   async cancelByBorrower(
-    intent: RentalIntent,
+    intent: IntentLike,
     actorUserId: string,
   ): Promise<RentalIntent> {
-    assertRentalBorrowerIs(intent, actorUserId);
-    const r = cancelRentalIntent(intent, "borrower");
+    const canonical = await loadCanonical(intent);
+    assertRentalBorrowerIs(canonical, actorUserId);
+    const r = cancelRentalIntent(canonical, "borrower");
     if (!r.ok) throw new Error(`invalid_transition: ${r.message}`);
     return persistAndEmit(r);
   },
@@ -155,19 +249,24 @@ export const rentalService = {
     return getPersistence().listHandoffRecordsForRental(rentalIntentId);
   },
 
-  // Seller-side handoff write path. Loads the rental and the existing
-  // record (or creates a fresh one), runs handoffService.confirmAsSeller
-  // — which calls assertRentalSellerIs BEFORE building the new record —
-  // and persists the result. Returns the persisted record.
+  // Seller-side handoff write path. Loads the canonical rental,
+  // enforces that the rental is in the right phase for the supplied
+  // `phase` (pickup vs return), runs handoffService.confirmAsSeller —
+  // which calls `assertRentalSellerIs` against the canonical
+  // `sellerId` BEFORE building the new record — and persists the
+  // result.
+  //
+  // Phase rules:
+  //   - `pickup`: rental status must be `paid` or `pickup_confirmed`.
+  //   - `return`: rental status must be `return_pending` or
+  //     `return_confirmed`.
   //
   // Throws:
   //   - Error("rental_not_found") when the rental id has no persisted intent.
-  //   - OwnershipError when actorUserId is not the rental's seller.
+  //   - Error("handoff_phase_not_allowed_for_status: ...") when the
+  //     canonical rental status is not in the allowed set for `phase`.
+  //   - OwnershipError when actorUserId is not the canonical seller.
   //   - HandoffInputError on bounded-shape violations (note, url, checks).
-  //
-  // The seller dashboard's compact "판매자 확인" action calls this with
-  // `{ checks: { mainUnit:true, components:true, working:true,
-  //   appearance:true, preexisting:true } }` and the default `confirm=true`.
   async recordSellerHandoff(
     rentalIntentId: string,
     phase: HandoffPhase,
@@ -175,15 +274,15 @@ export const rentalService = {
     patch: HandoffPatch = {},
     confirm = true,
   ): Promise<HandoffRecord> {
-    const intent = await getPersistence().getRentalIntent(rentalIntentId);
-    if (!intent) throw new Error("rental_not_found");
+    const canonical = await loadCanonical(rentalIntentId);
+    assertHandoffPhaseAllowed(canonical.status, phase);
     const existing = await getPersistence().getHandoffRecord(
-      rentalIntentId,
+      canonical.id,
       phase,
     );
-    const record = existing ?? createHandoffRecord(rentalIntentId, phase);
+    const record = existing ?? createHandoffRecord(canonical.id, phase);
     const next = handoffService.confirmAsSeller(
-      intent,
+      canonical,
       record,
       actorUserId,
       patch,
@@ -212,43 +311,48 @@ export const rentalService = {
     return next;
   },
 
-  async startPayment(intent: RentalIntent): Promise<RentalIntent> {
-    const session = await mockPaymentAdapter.createSession(intent);
-    const r = markPaymentPending(intent, session.sessionId);
+  async startPayment(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const session = await mockPaymentAdapter.createSession(canonical);
+    const r = markPaymentPending(canonical, session.sessionId);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async confirmPayment(intent: RentalIntent): Promise<RentalIntent> {
-    if (intent.payment.sessionId) {
+  async confirmPayment(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    if (canonical.payment.sessionId) {
       const result = await mockPaymentAdapter.confirmPayment(
-        intent.payment.sessionId,
+        canonical.payment.sessionId,
       );
       if (!result.ok) {
-        const failed = markPaymentFailed(intent, result.failureReason);
+        const failed = markPaymentFailed(canonical, result.failureReason);
         if (!failed.ok) throw new Error(failed.message);
         return persistAndEmit(failed);
       }
     }
-    const r = mockConfirmPayment(intent);
+    const r = mockConfirmPayment(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async confirmPickup(intent: RentalIntent): Promise<RentalIntent> {
-    const r = confirmPickup(intent);
+  async confirmPickup(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = confirmPickup(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async startReturn(intent: RentalIntent): Promise<RentalIntent> {
-    const r = markReturnPending(intent);
+  async startReturn(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = markReturnPending(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async confirmReturn(intent: RentalIntent): Promise<RentalIntent> {
-    const r = confirmReturn(intent);
+  async confirmReturn(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = confirmReturn(canonical);
     if (!r.ok) throw new Error(r.message);
     const next = await persistAndEmit(r);
     // Phase 1.5 integration: opening the post-return claim window is
@@ -259,61 +363,100 @@ export const rentalService = {
     return next;
   },
 
-  async readySettlement(intent: RentalIntent): Promise<RentalIntent> {
-    const r = markSettlementReady(intent);
+  // Settlement gate (Phase 1.7): blocks while a claim window is open
+  // or its review is unresolved. See `assertSettlementNotBlockedByClaim`.
+  async readySettlement(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    await assertSettlementNotBlockedByClaim(canonical.id);
+    const r = markSettlementReady(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  async settle(intent: RentalIntent): Promise<RentalIntent> {
-    const r = mockSettle(intent);
+  // Settlement gate also applies here so the gate cannot be bypassed
+  // by skipping `readySettlement`.
+  async settle(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    await assertSettlementNotBlockedByClaim(canonical.id);
+    const r = mockSettle(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
+  },
+
+  // Read-only helper for surfaces that need to know whether the
+  // settlement gate would currently allow advancement. Returns a
+  // typed reason string when blocked, or null when settlement may
+  // proceed. UI surfaces use this to disable the "next step" button
+  // without trying-and-catching the actual transition.
+  async settlementBlockReason(
+    rentalIntentId: string,
+  ): Promise<"claim_window_open" | "claim_review_unresolved" | null> {
+    const window = await claimReviewService.getClaimWindowForRental(
+      rentalIntentId,
+    );
+    if (!window) return null;
+    if (window.status === "open") return "claim_window_open";
+    if (window.status === "closed_no_claim") return null;
+    const reviews =
+      await claimReviewService.listClaimReviewsForRental(rentalIntentId);
+    const unresolved = reviews.find(
+      (r) => r.status === "open" || r.status === "needs_review",
+    );
+    if (unresolved) return "claim_review_unresolved";
+    return null;
   },
 
   // Legacy: trusts the caller. New code must use `declineRequest`
   // (seller-side decline) or `cancelByBorrower` (borrower-side cancel)
-  // — both verify the actor.
+  // — both verify the actor. Hardened to reload canonical.
   async cancel(
-    intent: RentalIntent,
+    intent: IntentLike,
     by: "borrower" | "seller" = "borrower",
   ): Promise<RentalIntent> {
-    const r = cancelRentalIntent(intent, by);
+    const canonical = await loadCanonical(intent);
+    const r = cancelRentalIntent(canonical, by);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
 
-  // Failure helpers (used by chaos/dev tools)
+  // Failure helpers (used by chaos/dev tools). All reload canonical
+  // so a stale caller cannot resurrect old state.
   async failPayment(
-    intent: RentalIntent,
+    intent: IntentLike,
     reason?: string,
   ): Promise<RentalIntent> {
-    const r = markPaymentFailed(intent, reason);
+    const canonical = await loadCanonical(intent);
+    const r = markPaymentFailed(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async missPickup(intent: RentalIntent): Promise<RentalIntent> {
-    const r = markPickupMissed(intent);
+  async missPickup(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = markPickupMissed(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async overdue(intent: RentalIntent): Promise<RentalIntent> {
-    const r = markReturnOverdue(intent);
+  async overdue(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = markReturnOverdue(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async damage(intent: RentalIntent): Promise<RentalIntent> {
-    const r = reportDamage(intent);
+  async damage(intent: IntentLike): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = reportDamage(canonical);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async dispute(intent: RentalIntent, reason?: string): Promise<RentalIntent> {
-    const r = openDispute(intent, reason);
+  async dispute(intent: IntentLike, reason?: string): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = openDispute(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },
-  async block(intent: RentalIntent, reason?: string): Promise<RentalIntent> {
-    const r = blockSettlement(intent, reason);
+  async block(intent: IntentLike, reason?: string): Promise<RentalIntent> {
+    const canonical = await loadCanonical(intent);
+    const r = blockSettlement(canonical, reason);
     if (!r.ok) throw new Error(r.message);
     return persistAndEmit(r);
   },

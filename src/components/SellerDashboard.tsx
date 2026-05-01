@@ -80,6 +80,13 @@ export function SellerDashboard() {
   const [claimWindowByRental, setClaimWindowByRental] = useState<
     Map<string, ClaimWindow>
   >(() => new Map());
+  // Settlement-block reasons keyed by rental id. Populated alongside
+  // the claim windows on every refresh so the active block can hide
+  // the "다음 단계 진행 →" affordance when the gate would reject the
+  // call. Absent entry = no block.
+  const [settlementBlockByRental, setSettlementBlockByRental] = useState<
+    Map<string, "claim_window_open" | "claim_review_unresolved">
+  >(() => new Map());
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
@@ -117,12 +124,19 @@ export function SellerDashboard() {
     // dashboard reads it back so the seller can decide between
     // "정상 반납으로 마무리" and "상태 문제 보고".
     const claimByRental = new Map<string, ClaimWindow>();
+    const blockByRental = new Map<
+      string,
+      "claim_window_open" | "claim_review_unresolved"
+    >();
     for (const rental of r) {
       if (rental.sellerId !== CURRENT_SELLER.id) continue;
       const cw = await claimReviewService.getClaimWindowForRental(rental.id);
       if (cw) claimByRental.set(rental.id, cw);
+      const reason = await rentalService.settlementBlockReason(rental.id);
+      if (reason) blockByRental.set(rental.id, reason);
     }
     setClaimWindowByRental(claimByRental);
+    setSettlementBlockByRental(blockByRental);
   };
 
   // Read persisted state once on mount. Effect-setState is intentional —
@@ -524,6 +538,7 @@ export function SellerDashboard() {
                 rows={active}
                 busyId={busyId}
                 onAdvance={handleAdvance}
+                settlementBlockByRental={settlementBlockByRental}
               />
             </div>
           </div>
@@ -716,10 +731,15 @@ function ActiveBlock({
   rows,
   busyId,
   onAdvance,
+  settlementBlockByRental,
 }: {
   rows: RentalIntent[];
   busyId: string | null;
   onAdvance: (r: RentalIntent) => void;
+  settlementBlockByRental: Map<
+    string,
+    "claim_window_open" | "claim_review_unresolved"
+  >;
 }) {
   return (
     <section className="bg-white border border-[color:var(--ink-12)]">
@@ -733,32 +753,54 @@ function ActiveBlock({
         </div>
       ) : (
         <ul className="flex flex-col">
-          {rows.map((r, i) => (
-            <li
-              key={r.id}
-              className={`grid grid-cols-[1fr_auto] gap-6 px-6 py-5 items-start ${
-                i !== rows.length - 1
-                  ? "border-b border-[color:var(--ink-12)]"
-                  : ""
-              }`}
-            >
-              <div className="flex flex-col gap-2">
-                <span className="text-body font-medium">{r.productName}</span>
-                <span className="text-small text-[color:var(--ink-60)]">
-                  {r.borrowerName ?? "익명"} · {r.durationDays}일
-                </span>
-                <button
-                  type="button"
-                  onClick={() => onAdvance(r)}
-                  disabled={busyId === r.id}
-                  className="self-start text-caption underline disabled:opacity-40"
-                >
-                  다음 단계 진행 →
-                </button>
-              </div>
-              <IntentStatusBadge status={r.status} />
-            </li>
-          ))}
+          {rows.map((r, i) => {
+            // The settlement gate blocks the advance from
+            // `return_confirmed → settlement_ready` and from
+            // `settlement_ready → settled` while a claim window is
+            // still open or a claim review is unresolved. The button
+            // hides instead of failing the click silently — the
+            // ClaimWindowBlock above already exposes the seller's
+            // close/open-claim affordance, so removing the duplicate
+            // path keeps the dashboard honest.
+            const settlementBlocked =
+              (r.status === "return_confirmed" ||
+                r.status === "settlement_ready") &&
+              settlementBlockByRental.has(r.id);
+            return (
+              <li
+                key={r.id}
+                className={`grid grid-cols-[1fr_auto] gap-6 px-6 py-5 items-start ${
+                  i !== rows.length - 1
+                    ? "border-b border-[color:var(--ink-12)]"
+                    : ""
+                }`}
+              >
+                <div className="flex flex-col gap-2">
+                  <span className="text-body font-medium">
+                    {r.productName}
+                  </span>
+                  <span className="text-small text-[color:var(--ink-60)]">
+                    {r.borrowerName ?? "익명"} · {r.durationDays}일
+                  </span>
+                  {settlementBlocked ? (
+                    <span className="text-caption text-[color:var(--ink-60)]">
+                      반납 후 상태 확인 단계가 끝나야 정산을 진행할 수 있어요.
+                    </span>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={() => onAdvance(r)}
+                      disabled={busyId === r.id}
+                      className="self-start text-caption underline disabled:opacity-40"
+                    >
+                      다음 단계 진행 →
+                    </button>
+                  )}
+                </div>
+                <IntentStatusBadge status={r.status} />
+              </li>
+            );
+          })}
         </ul>
       )}
     </section>

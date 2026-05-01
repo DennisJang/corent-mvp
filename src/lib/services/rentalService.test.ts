@@ -34,6 +34,27 @@ async function makeRequestedRental(): Promise<RentalIntent> {
   });
 }
 
+// Walks a fresh rental forward to a status that the seller-side
+// handoff write path accepts for the pickup phase (`paid` or
+// `pickup_confirmed`). Tests that exercise the pickup-handoff
+// surface need the rental to actually be picked up.
+async function makePaidRental(): Promise<RentalIntent> {
+  let r = await makeRequestedRental();
+  r = await rentalService.approveRequest(r, SELLER_ID);
+  r = await rentalService.startPayment(r);
+  r = await rentalService.confirmPayment(r);
+  return r;
+}
+
+// Walks the rental further to `return_pending` so a return-phase
+// handoff is allowed.
+async function makeReturnPendingRental(): Promise<RentalIntent> {
+  let r = await makePaidRental();
+  r = await rentalService.confirmPickup(r);
+  r = await rentalService.startReturn(r);
+  return r;
+}
+
 beforeEach(async () => {
   await getPersistence().clearAll();
 });
@@ -145,7 +166,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   };
 
   it("seller can record + persist a fresh pickup handoff", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     const rec = await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
@@ -165,7 +186,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("upserts the same (rental, phase) — does not duplicate", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     const a = await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
@@ -186,7 +207,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("non-seller (borrower) cannot record — throws OwnershipError, no persisted record", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await expect(
       rentalService.recordSellerHandoff(
         r.id,
@@ -199,7 +220,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("non-seller (stranger) cannot record — no persisted record", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await expect(
       rentalService.recordSellerHandoff(
         r.id,
@@ -212,7 +233,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("empty actorUserId is rejected", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await expect(
       rentalService.recordSellerHandoff(r.id, "pickup", "", FULL_PICKUP_PATCH),
     ).rejects.toBeInstanceOf(OwnershipError);
@@ -234,13 +255,17 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("pickup and return phases are kept independent", async () => {
-    const r = await makeRequestedRental();
+    // Record pickup at `paid`, then walk forward and record return at
+    // `return_pending`. The two phases must not collide.
+    let r = await makePaidRental();
     await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
       SELLER_ID,
       FULL_PICKUP_PATCH,
     );
+    r = await rentalService.confirmPickup(r);
+    r = await rentalService.startReturn(r);
     await rentalService.recordSellerHandoff(
       r.id,
       "return",
@@ -257,7 +282,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("emits exactly one TrustEvent on the seller-confirm transition (pickup)", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
@@ -272,7 +297,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("does NOT re-emit on a subsequent seller-confirm save", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
@@ -290,7 +315,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("does NOT emit when confirm=false", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await rentalService.recordSellerHandoff(
       r.id,
       "pickup",
@@ -302,7 +327,7 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
   });
 
   it("emits return_evidence_recorded for the return phase", async () => {
-    const r = await makeRequestedRental();
+    const r = await makeReturnPendingRental();
     await rentalService.recordSellerHandoff(
       r.id,
       "return",
@@ -310,13 +335,19 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
       FULL_PICKUP_PATCH,
     );
     const events = await getPersistence().listTrustEventsForRental(r.id);
-    expect(events).toHaveLength(1);
-    expect(events[0]?.type).toBe("return_evidence_recorded");
-    expect(events[0]?.handoffPhase).toBe("return");
+    // A return-phase handoff at `return_pending` only emits the
+    // return-evidence event; the pickup-phase event was never
+    // recorded for this rental.
+    expect(
+      events.filter((e) => e.type === "return_evidence_recorded"),
+    ).toHaveLength(1);
+    expect(
+      events.find((e) => e.type === "return_evidence_recorded")?.handoffPhase,
+    ).toBe("return");
   });
 
   it("does NOT emit when ownership is rejected", async () => {
-    const r = await makeRequestedRental();
+    const r = await makePaidRental();
     await expect(
       rentalService.recordSellerHandoff(
         r.id,
@@ -326,5 +357,250 @@ describe("rentalService.recordSellerHandoff — handoff persistence orchestratio
       ),
     ).rejects.toBeInstanceOf(OwnershipError);
     expect(await getPersistence().listTrustEventsForRental(r.id)).toEqual([]);
+  });
+
+  // ----------------------------------------------------------------
+  // Phase-rule hardening (Phase 1.7).
+  // ----------------------------------------------------------------
+
+  it("rejects pickup handoff while rental is still in `requested`", async () => {
+    const r = await makeRequestedRental();
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "pickup",
+        SELLER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toThrow(/handoff_phase_not_allowed_for_status/);
+    expect(await rentalService.getHandoffRecord(r.id, "pickup")).toBeNull();
+    expect(await getPersistence().listTrustEventsForRental(r.id)).toEqual([]);
+  });
+
+  it("rejects return handoff before the rental reaches a return phase", async () => {
+    const r = await makePaidRental();
+    expect(r.status).toBe("paid");
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "return",
+        SELLER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toThrow(/handoff_phase_not_allowed_for_status/);
+    expect(await rentalService.getHandoffRecord(r.id, "return")).toBeNull();
+  });
+
+  it("rejects pickup handoff once the rental has moved past pickup_confirmed", async () => {
+    const r = await makeReturnPendingRental();
+    expect(r.status).toBe("return_pending");
+    await expect(
+      rentalService.recordSellerHandoff(
+        r.id,
+        "pickup",
+        SELLER_ID,
+        FULL_PICKUP_PATCH,
+      ),
+    ).rejects.toThrow(/handoff_phase_not_allowed_for_status/);
+  });
+});
+
+// --------------------------------------------------------------
+// Canonical-write hardening (Phase 1.7).
+//
+// The actor-aware writes accept a caller-supplied `RentalIntent`
+// shape for ergonomic reasons, but the service must reload the
+// canonical rental by id before any authorization or status check.
+// A forged or stale object cannot:
+//   - overwrite newer persisted state with old fields,
+//   - claim a different `sellerId` to bypass the ownership guard,
+//   - rewind / fast-forward the canonical status by lying about it.
+// --------------------------------------------------------------
+
+describe("rentalService — canonical writes ignore caller-supplied intent fields", () => {
+  it("forged sellerId on the caller-supplied intent does NOT bypass ownership", async () => {
+    const r = await makeRequestedRental();
+    // Construct a forged shape that pretends the stranger is the seller.
+    const forged = { ...r, sellerId: STRANGER_ID };
+    await expect(
+      rentalService.approveRequest(forged, STRANGER_ID),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    // Canonical record is untouched.
+    const stored = await rentalService.get(r.id);
+    expect(stored?.sellerId).toBe(SELLER_ID);
+    expect(stored?.status).toBe("requested");
+  });
+
+  it("stale caller-supplied intent does NOT overwrite newer persisted state", async () => {
+    const r = await makeRequestedRental();
+    // Snapshot a stale copy at status `requested`.
+    const stale = { ...r };
+    // Advance the canonical record out-of-band.
+    const approved = await rentalService.approveRequest(r, SELLER_ID);
+    expect(approved.status).toBe("seller_approved");
+    // Re-approving with the stale copy should NOT silently succeed
+    // (the canonical record is no longer at `requested`, so the
+    // state-machine transition rejects).
+    await expect(
+      rentalService.approveRequest(stale, SELLER_ID),
+    ).rejects.toThrow(/invalid_transition/);
+    // Canonical status is still the post-approve value, not rewound.
+    const stored = await rentalService.get(r.id);
+    expect(stored?.status).toBe("seller_approved");
+  });
+
+  it("startPayment ignores forged payment.status on the caller-supplied intent", async () => {
+    const r = await makeRequestedRental();
+    const approved = await rentalService.approveRequest(r, SELLER_ID);
+    // Forged shape claims the rental is already at `paid`. The canonical
+    // record is at `seller_approved`; the transition must succeed using
+    // the canonical status.
+    const forged = { ...approved, status: "paid" as const };
+    const next = await rentalService.startPayment(forged);
+    expect(next.status).toBe("payment_pending");
+  });
+
+  it("operating on an unknown id throws rental_not_found", async () => {
+    const r = await makeRequestedRental();
+    const forgedId = { ...r, id: "ri_does_not_exist" };
+    await expect(
+      rentalService.approveRequest(forgedId, SELLER_ID),
+    ).rejects.toThrow(/rental_not_found/);
+  });
+
+  it("recordSellerHandoff ignores forged sellerId — uses the canonical seller", async () => {
+    const r = await makePaidRental();
+    const forgedRentalId = r.id; // The id is canonical; seller forging happens in the actor arg.
+    await expect(
+      rentalService.recordSellerHandoff(
+        forgedRentalId,
+        "pickup",
+        STRANGER_ID,
+        { checks: { mainUnit: true } },
+      ),
+    ).rejects.toBeInstanceOf(OwnershipError);
+    expect(await rentalService.getHandoffRecord(r.id, "pickup")).toBeNull();
+  });
+});
+
+// --------------------------------------------------------------
+// Settlement gating (Phase 1.7).
+//
+// `confirmReturn` opens the post-return claim window automatically.
+// Settlement (`readySettlement` / `settle`) must be blocked while
+// the window is open or its review is unresolved, and must only
+// succeed after a clean close (no claim) or a final admin decision.
+// --------------------------------------------------------------
+
+describe("rentalService — settlement is gated by the claim window", () => {
+  async function makeReturnConfirmedRental(): Promise<RentalIntent> {
+    let r = await makeReturnPendingRental();
+    r = await rentalService.confirmReturn(r);
+    return r;
+  }
+
+  it("readySettlement is BLOCKED while the claim window is open", async () => {
+    const r = await makeReturnConfirmedRental();
+    expect(r.status).toBe("return_confirmed");
+    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+      /settlement_blocked: claim_window_open/,
+    );
+    const stored = await rentalService.get(r.id);
+    expect(stored?.status).toBe("return_confirmed");
+  });
+
+  it("settle is BLOCKED directly even if readySettlement is skipped", async () => {
+    const r = await makeReturnConfirmedRental();
+    await expect(rentalService.settle(r)).rejects.toThrow(
+      /settlement_blocked: claim_window_open/,
+    );
+  });
+
+  it("readySettlement is ALLOWED after a clean (no-claim) window close", async () => {
+    const { claimReviewService } = await import("./claimReviewService");
+    const r = await makeReturnConfirmedRental();
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    const ready = await rentalService.readySettlement(r);
+    expect(ready.status).toBe("settlement_ready");
+  });
+
+  it("readySettlement is BLOCKED while a claim is open and the review is unresolved", async () => {
+    const { claimReviewService } = await import("./claimReviewService");
+    const r = await makeReturnConfirmedRental();
+    await claimReviewService.openClaim(r.id, SELLER_ID, "흠집 1건");
+    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+      /settlement_blocked: claim_review_unresolved/,
+    );
+  });
+
+  it("readySettlement stays BLOCKED while review is in needs_review", async () => {
+    const { claimReviewService } = await import("./claimReviewService");
+    const r = await makeReturnConfirmedRental();
+    const { review } = await claimReviewService.openClaim(
+      r.id,
+      SELLER_ID,
+      "흠집 1건",
+    );
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "needs_review",
+      "founder@example.com",
+    );
+    await expect(rentalService.readySettlement(r)).rejects.toThrow(
+      /settlement_blocked: claim_review_unresolved/,
+    );
+  });
+
+  it("readySettlement is ALLOWED once the review is rejected (final outcome)", async () => {
+    const { claimReviewService } = await import("./claimReviewService");
+    const r = await makeReturnConfirmedRental();
+    const { review } = await claimReviewService.openClaim(
+      r.id,
+      SELLER_ID,
+      "흠집 1건",
+    );
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "rejected",
+      "founder@example.com",
+    );
+    const ready = await rentalService.readySettlement(r);
+    expect(ready.status).toBe("settlement_ready");
+  });
+
+  it("readySettlement is ALLOWED once the review is approved (final outcome)", async () => {
+    const { claimReviewService } = await import("./claimReviewService");
+    const r = await makeReturnConfirmedRental();
+    const { review } = await claimReviewService.openClaim(
+      r.id,
+      SELLER_ID,
+      "흠집 1건",
+    );
+    await claimReviewService.recordAdminDecision(
+      review.id,
+      "approved",
+      "founder@example.com",
+    );
+    const ready = await rentalService.readySettlement(r);
+    expect(ready.status).toBe("settlement_ready");
+  });
+
+  it("settlementBlockReason mirrors the gate state", async () => {
+    const r = await makeReturnConfirmedRental();
+    expect(await rentalService.settlementBlockReason(r.id)).toBe(
+      "claim_window_open",
+    );
+    const { claimReviewService } = await import("./claimReviewService");
+    await claimReviewService.openClaim(r.id, SELLER_ID, "흠집");
+    expect(await rentalService.settlementBlockReason(r.id)).toBe(
+      "claim_review_unresolved",
+    );
+    const reviews = await claimReviewService.listClaimReviewsForRental(r.id);
+    await claimReviewService.recordAdminDecision(
+      reviews[0]!.id,
+      "approved",
+      "founder@example.com",
+    );
+    expect(await rentalService.settlementBlockReason(r.id)).toBeNull();
   });
 });
