@@ -18,6 +18,15 @@ const SELLER_ID = "seller_jisu";
 const BORROWER_ID = "borrower_minho";
 const STRANGER_ID = "stranger_x";
 const ADMIN_ID = "admin_dev_ops";
+const TRUST_CONTRACT_HANDOFF_PATCH = {
+  checks: {
+    mainUnit: true,
+    components: true,
+    working: true,
+    appearance: true,
+    preexisting: true,
+  },
+};
 
 async function makeRequestedRental(): Promise<RentalIntent> {
   return rentalService.create({
@@ -67,6 +76,17 @@ async function makeSettlementReadyRental(): Promise<RentalIntent> {
   const r = await makeReturnConfirmedRental();
   await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
   return rentalService.readySettlement(r, SELLER_ID);
+}
+
+async function trustEventContractFor(
+  rentalIntentId: string,
+): Promise<string[]> {
+  const events = await getPersistence().listTrustEventsForRental(
+    rentalIntentId,
+  );
+  return events.map((e) =>
+    [e.type, e.actor, e.handoffPhase ?? "none"].join(":"),
+  );
 }
 
 beforeEach(async () => {
@@ -660,6 +680,107 @@ describe("rentalService — damage / dispute actor awareness", () => {
     await expect(
       rentalService.dispute(strangerCase, STRANGER_ID),
     ).rejects.toBeInstanceOf(OwnershipError);
+  });
+});
+
+// --------------------------------------------------------------
+// TrustEvent consistency contract.
+//
+// DB/auth migration will need to persist RentalIntent transitions,
+// RentalEvents, TrustEvents, and later NotificationEvents together.
+// This test documents the current local-MVP boundary: most lifecycle
+// status moves write RentalEvents only; trust signals are emitted by
+// seller handoff evidence, claim-window/review actions, clean returns,
+// and direct damage reports.
+// --------------------------------------------------------------
+
+describe("rentalService — trust event consistency contract", () => {
+  it("maps key lifecycle writes to their current trust-event emissions", async () => {
+    let r = await makeRequestedRental();
+    expect(await trustEventContractFor(r.id)).toEqual([]);
+
+    r = await rentalService.approveRequest(r, SELLER_ID);
+    expect(await trustEventContractFor(r.id)).toEqual([]);
+
+    r = await rentalService.startPayment(r, BORROWER_ID);
+    r = await rentalService.confirmPayment(r, BORROWER_ID);
+    expect(await trustEventContractFor(r.id)).toEqual([]);
+
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "pickup",
+      SELLER_ID,
+      TRUST_CONTRACT_HANDOFF_PATCH,
+    );
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+    ]);
+
+    r = await rentalService.confirmPickup(r, BORROWER_ID);
+    r = await rentalService.startReturn(r, BORROWER_ID);
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+    ]);
+
+    await rentalService.recordSellerHandoff(
+      r.id,
+      "return",
+      SELLER_ID,
+      TRUST_CONTRACT_HANDOFF_PATCH,
+    );
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+      "return_evidence_recorded:seller:return",
+    ]);
+
+    r = await rentalService.confirmReturn(r, BORROWER_ID);
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+      "return_evidence_recorded:seller:return",
+      "claim_window_opened:system:none",
+    ]);
+
+    const { claimReviewService } = await import("./claimReviewService");
+    await claimReviewService.closeClaimWindowAsNoClaim(r.id, SELLER_ID);
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+      "return_evidence_recorded:seller:return",
+      "claim_window_opened:system:none",
+      "claim_window_closed:seller:none",
+      "return_confirmed_by_seller:seller:none",
+      "condition_match_recorded:seller:return",
+    ]);
+
+    r = await rentalService.readySettlement(r, SELLER_ID);
+    r = await rentalService.settle(r, SELLER_ID);
+    expect(r.status).toBe("settled");
+    expect(await trustEventContractFor(r.id)).toEqual([
+      "pickup_evidence_recorded:seller:pickup",
+      "return_evidence_recorded:seller:return",
+      "claim_window_opened:system:none",
+      "claim_window_closed:seller:none",
+      "return_confirmed_by_seller:seller:none",
+      "condition_match_recorded:seller:return",
+    ]);
+  });
+
+  it("documents direct damage attribution and dispute non-emission", async () => {
+    let damaged = await makeReturnPendingRental();
+    damaged = await rentalService.damage(damaged, BORROWER_ID);
+    expect(damaged.status).toBe("damage_reported");
+    expect(await trustEventContractFor(damaged.id)).toEqual([
+      "condition_issue_reported:borrower:return",
+    ]);
+
+    let disputed = await makeSettlementReadyRental();
+    const beforeDispute = await trustEventContractFor(disputed.id);
+    disputed = await rentalService.dispute(
+      disputed,
+      BORROWER_ID,
+      "borrower_dispute",
+    );
+    expect(disputed.status).toBe("dispute_opened");
+    expect(await trustEventContractFor(disputed.id)).toEqual(beforeDispute);
   });
 });
 
