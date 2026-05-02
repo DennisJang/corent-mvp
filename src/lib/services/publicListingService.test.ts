@@ -110,6 +110,24 @@ describe("mapStaticProductToPublicListing", () => {
 });
 
 describe("mapApprovedListingIntentToPublicListing — projection safety", () => {
+  const PUBLIC_LISTING_KEYS = [
+    "category",
+    "condition",
+    "detailHref",
+    "estimatedValue",
+    "hero",
+    "isPersistedProjection",
+    "pickupArea",
+    "prices",
+    "publicListingId",
+    "sellerId",
+    "sellerName",
+    "source",
+    "sourceId",
+    "summary",
+    "title",
+  ].sort();
+
   it("projects an approved listing through the safe allowlist", () => {
     const listing = makeListingIntent();
     const projected = mapApprovedListingIntentToPublicListing(listing);
@@ -145,6 +163,82 @@ describe("mapApprovedListingIntentToPublicListing — projection safety", () => 
     expect("rawSellerInput" in (projected as object)).toBe(false);
     expect("verification" in (projected as object)).toBe(false);
     expect("privateSerialNumber" in (projected as object)).toBe(false);
+  });
+
+  it("does not expose linked intake/admin/trust/payment internals from expanded persisted rows", async () => {
+    const persistence = getPersistence();
+    const sessionId = "isn_projection_privacy";
+    await persistence.saveIntakeSession({
+      id: sessionId,
+      sellerId: SELLER_ID,
+      status: "draft_created",
+      listingIntentId: "li_expanded_private",
+      createdAt: "2026-04-29T00:00:00.000Z",
+      updatedAt: "2026-04-29T00:00:00.000Z",
+    });
+    await persistence.appendIntakeMessage({
+      id: "im_projection_privacy",
+      sessionId,
+      role: "seller",
+      content: "RAW_CHAT_SECRET_DO_NOT_PROJECT",
+      createdAt: "2026-04-29T00:00:00.000Z",
+    });
+    await persistence.saveIntakeExtraction({
+      sessionId,
+      itemName: "INTAKE_EXTRACTION_SECRET_NAME",
+      category: "massage_gun",
+      pickupArea: "INTAKE_EXTRACTION_SECRET_PICKUP",
+      oneDayPrice: 12345,
+      missingFields: ["defects"],
+      createdAt: "2026-04-29T00:00:00.000Z",
+    });
+
+    await persistence.saveListingIntent({
+      ...makeListingIntent({ id: "li_expanded_private" }),
+      intakeSessionId: sessionId,
+      intakeMessages: [{ content: "INLINE_RAW_CHAT_SECRET" }],
+      intakeExtraction: { promptTrace: "EXTRACTION_PROMPT_TRACE_SECRET" },
+      adminReview: {
+        notes: "ADMIN_NOTES_SECRET",
+        reviewerId: "FOUNDER_REVIEWER_SECRET",
+      },
+      trustSummary: {
+        hiddenRiskScore: 99,
+        disputesOpened: 42,
+      },
+      accountStanding: "ACCOUNT_STANDING_SECRET",
+      payment: { sessionId: "PAYMENT_SESSION_SECRET" },
+      settlement: { sellerPayout: 123456 },
+      contact: { phone: "010-SECRET-PHONE" },
+    } as unknown as ListingIntent);
+
+    const projection = await publicListingService.getPublicListingById(
+      "listing:li_expanded_private",
+    );
+
+    expect(projection).not.toBeNull();
+    expect(Object.keys(projection!).sort()).toEqual(PUBLIC_LISTING_KEYS);
+    expect(Object.keys(projection!.prices).sort()).toEqual(["1d", "3d", "7d"]);
+    expect(Object.keys(projection!.hero).sort()).toEqual(["initials"]);
+
+    const flat = JSON.stringify(projection);
+    for (const secret of [
+      "RAW_CHAT_SECRET_DO_NOT_PROJECT",
+      "INLINE_RAW_CHAT_SECRET",
+      "INTAKE_EXTRACTION_SECRET_NAME",
+      "INTAKE_EXTRACTION_SECRET_PICKUP",
+      "EXTRACTION_PROMPT_TRACE_SECRET",
+      "ADMIN_NOTES_SECRET",
+      "FOUNDER_REVIEWER_SECRET",
+      "hiddenRiskScore",
+      "disputesOpened",
+      "ACCOUNT_STANDING_SECRET",
+      "PAYMENT_SESSION_SECRET",
+      "010-SECRET-PHONE",
+      sessionId,
+    ]) {
+      expect(flat).not.toContain(secret);
+    }
   });
 
   it("returns null for every non-approved status", () => {
