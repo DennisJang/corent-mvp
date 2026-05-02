@@ -169,7 +169,7 @@ export async function startIntakeSessionAction(): Promise<
       }
     },
     {} as StartIntakeSessionPayload,
-    { expectedActorKind: "seller" },
+    { expectedActorKind: "seller", prefer: "seller" },
   );
 }
 
@@ -221,7 +221,7 @@ export async function appendIntakeSellerMessageAction(
       }
     },
     payload,
-    { expectedActorKind: "seller" },
+    { expectedActorKind: "seller", prefer: "seller" },
   );
 }
 
@@ -269,6 +269,6 @@ export async function createIntakeListingDraftAction(
       }
     },
     payload,
-    { expectedActorKind: "seller" },
+    { expectedActorKind: "seller", prefer: "seller" },
   );
 }

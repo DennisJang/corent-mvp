@@ -176,3 +176,111 @@ describe("server actor seam — mock identity import boundary", () => {
     }
   });
 });
+
+// =====================================================================
+// PR 5A — closed-alpha profile / capability lookup boundary
+//
+// `lookupProfileCapabilities` reads the profile + capability rows
+// (profiles, seller_profiles, borrower_profiles) and is the single
+// supabase-side seam used by `resolveServerActor`. Two boundary
+// invariants:
+//
+//   1. Only the resolver may call it from production server runtime.
+//      Server actions, services, dispatchers, etc. resolve actors via
+//      `resolveServerActor()` — they never look up capabilities
+//      themselves.
+//
+//   2. The lookup helper is read-only: no insert / upsert / update
+//      paths exist. Closed-alpha posture is "manual seed only"; an
+//      automatic insert here would silently grant capabilities the
+//      founder did not approve.
+//
+// Tests are static-text guards (same pattern as the mock-session
+// boundary above). They grep the filesystem; no code is executed.
+// =====================================================================
+
+const ALL_SRC_FILES = walk(join(__dirname, "..", "..", "..", "src"));
+
+const PROFILE_LOOKUP_PATTERNS: RegExp[] = [
+  /from\s+["']@\/server\/actors\/profileLookup(?:\.tsx?)?["']/,
+  /from\s+["'](?:\.\.\/)+server\/actors\/profileLookup(?:\.tsx?)?["']/,
+  /require\(\s*["']@\/server\/actors\/profileLookup(?:\.tsx?)?["']\s*\)/,
+  /require\(\s*["'](?:\.\.\/)+server\/actors\/profileLookup(?:\.tsx?)?["']\s*\)/,
+  /import\(\s*["']@\/server\/actors\/profileLookup(?:\.tsx?)?["']\s*\)/,
+  /import\(\s*["'](?:\.\.\/)+server\/actors\/profileLookup(?:\.tsx?)?["']\s*\)/,
+];
+
+const ALLOWED_PROFILE_LOOKUP_IMPORTERS = new Set<string>([
+  "actors/resolveServerActor.ts",
+]);
+
+describe("server actor seam — profile lookup boundary (PR 5A)", () => {
+  it("no client/component file imports the profile lookup helper", () => {
+    const SRC_ROOT_LOCAL = join(__dirname, "..", "..", "..", "src");
+    const offenders: string[] = [];
+    for (const file of ALL_SRC_FILES) {
+      const rel = relative(SRC_ROOT_LOCAL, file);
+      // Only check non-server source. Tests anywhere may import.
+      if (rel.startsWith("server/")) continue;
+      if (/\.test\.(ts|tsx)$/.test(rel)) continue;
+      const src = readFileSync(file, "utf8");
+      if (PROFILE_LOOKUP_PATTERNS.some((re) => re.test(src))) {
+        offenders.push(rel);
+      }
+    }
+    expect(
+      offenders,
+      "non-server source files must not import @/server/actors/profileLookup",
+    ).toEqual([]);
+  });
+
+  it("only `actors/resolveServerActor.ts` calls lookupProfileCapabilities from server runtime", () => {
+    const offenders: string[] = [];
+    for (const file of SERVER_RUNTIME_FILES) {
+      const rel = relative(SERVER_ROOT, file);
+      // The lookup module itself is allowed to define the function.
+      if (rel === "actors/profileLookup.ts") continue;
+      const src = readFileSync(file, "utf8");
+      const hits = PROFILE_LOOKUP_PATTERNS.some((re) => re.test(src));
+      if (!hits) continue;
+      if (ALLOWED_PROFILE_LOOKUP_IMPORTERS.has(rel)) continue;
+      offenders.push(rel);
+    }
+    expect(
+      offenders,
+      "src/server/** runtime files reaching profileLookup outside the resolver",
+    ).toEqual([]);
+  });
+
+  it("profileLookup module is read-only — no insert / upsert / update / delete paths", () => {
+    const file = join(SERVER_ROOT, "actors", "profileLookup.ts");
+    const src = readFileSync(file, "utf8");
+    // The module composes Supabase calls of the form
+    // `client.from(table).select(...).eq(...).maybeSingle()`. Any
+    // mutation method is a regression — closed-alpha auto-create is
+    // explicitly forbidden.
+    expect(src).not.toMatch(/\.insert\s*\(/);
+    expect(src).not.toMatch(/\.upsert\s*\(/);
+    expect(src).not.toMatch(/\.update\s*\(/);
+    expect(src).not.toMatch(/\.delete\s*\(/);
+    // It MUST use only `.select` against the three tables.
+    expect(src).toContain('"profiles"');
+    expect(src).toContain('"seller_profiles"');
+    expect(src).toContain('"borrower_profiles"');
+  });
+
+  it("server actions never reach the profile lookup helper directly (must go through the resolver)", () => {
+    const candidates = SERVER_RUNTIME_FILES.filter((f) =>
+      /\/actions\.ts$/.test(f),
+    );
+    for (const file of candidates) {
+      const src = readFileSync(file, "utf8");
+      for (const re of PROFILE_LOOKUP_PATTERNS) {
+        expect(
+          re.test(src),
+          `${relative(SERVER_ROOT, file)} must not import profileLookup directly`,
+        ).toBe(false);
+      }
+    }
+  });
+});

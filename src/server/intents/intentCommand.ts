@@ -24,6 +24,7 @@
 
 import {
   resolveServerActor,
+  type ResolveServerActorOptions,
   type ServerActor,
 } from "@/server/actors/resolveServerActor";
 import { intentErr, type IntentResult } from "@/server/intents/intentResult";
@@ -43,12 +44,23 @@ export type IntentCommandHandler<TPayload, TValue> = (
 // `intentErr("ownership", ...)` if the actor doesn't match.
 export type ExpectedActorKind = ServerActor["kind"];
 
+// `prefer` is forwarded to `resolveServerActor` so the resolver can
+// pick between capabilities for a profile that owns both
+// `seller_profiles` and `borrower_profiles` rows. Defaults inside
+// the resolver to `"seller"` when omitted.
+export type RunIntentCommandOptions = {
+  expectedActorKind?: ExpectedActorKind;
+  prefer?: ResolveServerActorOptions["prefer"];
+};
+
 export async function runIntentCommand<TPayload, TValue>(
   handler: IntentCommandHandler<TPayload, TValue>,
   payload: TPayload,
-  options?: { expectedActorKind?: ExpectedActorKind },
+  options?: RunIntentCommandOptions,
 ): Promise<IntentResult<TValue>> {
-  const actor = await resolveServerActor();
+  const actor = await resolveServerActor(
+    options?.prefer ? { prefer: options.prefer } : {},
+  );
   if (!actor) {
     return intentErr("unauthenticated", "no actor resolved");
   }

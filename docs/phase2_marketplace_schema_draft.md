@@ -511,29 +511,38 @@ service's existing try/catch surfaces it via the runner's
   Supabase client. The test also asserts the mock-actor + supabase
   combination never reaches the writer.
 
-### PR 5 prerequisites (unchanged from PR 3 doc)
+### PR 5 prerequisites (PR 5A landed — actor resolution only)
 
-PR 5 is the auth + dispatch-flip slice. It must land all four:
+PR 5 is the auth + dispatch-flip slice. PR 5A landed the
+**closed-alpha actor resolution** prerequisite (item 3 below); the
+remaining three items still gate the dispatch flip.
 
 1. **Seller / renter auth route** — magic-link + callback,
    mirroring the founder-admin pattern in
    [`src/server/admin/auth.ts`](../src/server/admin/auth.ts) +
    [`src/server/admin/supabase-ssr.ts`](../src/server/admin/supabase-ssr.ts).
-2. **`seller_profiles` registration flow** — first-login auto-create
-   or explicit opt-in. Founder approval required on the
-   registration UX.
-3. **`auth.uid → seller_profiles.profile_id` resolver** — a helper
-   that reads the user's profile row and returns the seller id the
-   downstream services already understand.
-4. **Resolver body swap + client adapter flip** — replace
-   `resolveServerActor`'s body so `source: "supabase"` is
-   reachable, and either flip `SHARED_SERVER_MODE` in
-   `chatIntakeClient.ts` or replace it with a runtime probe of the
-   server's mode.
+   *Not in PR 5A.*
+2. **`seller_profiles` registration flow** — explicit opt-in,
+   founder-approved. PR 5A explicitly does **not** auto-create
+   `seller_profiles`; closed-alpha rows are seeded by the founder
+   out-of-band. *Not in PR 5A.*
+3. ✅ **`auth.uid → profiles + capability` resolver** — landed in
+   PR 5A. `resolveServerActor` reads the SSR session via
+   [`createAdminAuthClient`](../src/server/admin/supabase-ssr.ts),
+   then [`lookupProfileCapabilities`](../src/server/actors/profileLookup.ts)
+   reads `profiles` + `seller_profiles` + `borrower_profiles` and
+   returns a normalized capability shape. The resolver picks
+   between seller/renter actors via the new `prefer` option that
+   `runIntentCommand` forwards. See
+   [`docs/corent_closed_alpha_actor_resolver_note.md`](./corent_closed_alpha_actor_resolver_note.md).
+4. **Client adapter flip** — flip `SHARED_SERVER_MODE` in
+   `chatIntakeClient.ts` (or replace it with a runtime probe of
+   the server's mode). *Not in PR 5A.*
 
-Once those four are in place, PR 4's dispatcher seam goes live
-without further changes to the chat intake actions or service —
-the wiring is already in place.
+Once items 1, 2, and 4 are in place, PR 4's dispatcher seam goes
+live without further changes to the chat intake actions or
+service — the wiring is already in place and PR 5A's resolver
+fulfills the auth-bound `source: "supabase"` actor contract.
 
 ### Related executable contracts (must continue to pass)
 
