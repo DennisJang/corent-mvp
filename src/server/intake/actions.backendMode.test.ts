@@ -258,10 +258,17 @@ describe("intake server actions — supabase mode + supabase actor (PR 4 dispatc
     expect(localSessions).toEqual([]);
   });
 
-  it("createIntakeListingDraftAction dispatches intake reads/writes to the supabase writer", async () => {
-    // The supabase writer returns a fresh session that already has
-    // a seller message saved. The action needs at least one seller
-    // message to derive sellerText.
+  it("createIntakeListingDraftAction fails closed in supabase mode (PR 5D split-brain guard)", async () => {
+    // PR 5D revised contract. Until listing draft persistence is
+    // externalized, `createIntakeListingDraftAction` MUST fail
+    // closed in supabase mode rather than letting the chat intake
+    // service write a listing row into localStorage while the
+    // intake session lives in Supabase.
+    //
+    // Pre-load the supabase writer with mocks that, IF the action
+    // mistakenly ran the service, would let the call succeed. We
+    // expect NONE of these to fire because the split-brain guard
+    // returns before the service runs.
     mockSupabaseWriter.getIntakeSession.mockResolvedValueOnce({
       id: SESSION_UUID,
       sellerId: CURRENT_SELLER.id,
@@ -281,28 +288,43 @@ describe("intake server actions — supabase mode + supabase actor (PR 4 dispatc
     mockSupabaseWriter.getIntakeExtractionForSession.mockResolvedValueOnce(null);
 
     const r = await createIntakeListingDraftAction({ sessionId: SESSION_UUID });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    // Intake reads went to the supabase writer.
-    expect(mockSupabaseWriter.getIntakeSession).toHaveBeenCalledWith(
-      SESSION_UUID,
-    );
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      expect(r.code).toBe("unsupported");
+      expect(r.message).toBe("supabase_listing_draft_not_yet_wired");
+    }
+    // Critical: the split-brain guard fires BEFORE any intake
+    // read or write. The supabase writer is never touched, so
+    // there is no partial Supabase state to clean up.
+    expect(mockSupabaseWriter.getIntakeSession).not.toHaveBeenCalled();
     expect(
       mockSupabaseWriter.listIntakeMessagesForSession,
-    ).toHaveBeenCalledWith(SESSION_UUID);
+    ).not.toHaveBeenCalled();
     expect(
       mockSupabaseWriter.getIntakeExtractionForSession,
-    ).toHaveBeenCalledWith(SESSION_UUID);
-    // Intake-side session update went through the supabase writer.
-    expect(mockSupabaseWriter.saveIntakeSession).toHaveBeenCalledTimes(1);
-    // Listing draft is owned by the resolved actor, never approved.
-    expect(r.value.listing.sellerId).toBe(CURRENT_SELLER.id);
-    expect(r.value.listing.status).toBe("draft");
-    // Note: listing-side persistence (`getListingIntent` /
-    // `listingService.saveDraft`) intentionally still uses
-    // `getPersistence()` in PR 4 — extending the writer to listings
-    // is a future slice. The test does not assert listing-side
-    // routing because that boundary is not in PR 4's scope.
+    ).not.toHaveBeenCalled();
+    expect(mockSupabaseWriter.saveIntakeSession).not.toHaveBeenCalled();
+    // And no listing row landed in local persistence either —
+    // the action returned before the chat intake service ran.
+    const localSessions = await getPersistence().listIntakeSessions();
+    expect(localSessions).toEqual([]);
+  });
+
+  it("createIntakeListingDraftAction split-brain message is non-secret (no table names / env / SQL / stack)", async () => {
+    const r = await createIntakeListingDraftAction({ sessionId: SESSION_UUID });
+    expect(r.ok).toBe(false);
+    if (!r.ok) {
+      // Korean: "no internal table names / env names / SQL / stack
+      // frames / row payloads in the user-visible message".
+      expect(r.message).not.toMatch(/listing_intake_sessions/);
+      expect(r.message).not.toMatch(/listing_intake_messages/);
+      expect(r.message).not.toMatch(/listing_extractions/);
+      expect(r.message).not.toMatch(/SUPABASE_/);
+      expect(r.message).not.toMatch(/SERVICE_ROLE/);
+      expect(r.message).not.toMatch(/process\.env/);
+      expect(r.message).not.toMatch(/insert into|select from/i);
+      expect(r.message).not.toMatch(/at .+\(/); // no stack frames
+    }
   });
 
   it("does NOT call the supabase writer when actor is mock-sourced (gate refuses earlier)", async () => {

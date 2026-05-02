@@ -107,22 +107,21 @@ remains PR 5D.
 
 ## What lands next
 
-PR 5D is a **controlled server-backed intake smoke / dispatch
-step**. Options under consideration (decision deferred to PR 5D
-itself, not this PR):
+PR 5D **landed**: the server-backed intake dispatch smoke +
+split-brain guard. `start` / `append` actions dispatch to the
+Supabase intake writer in supabase mode + supabase actor;
+`createIntakeListingDraftAction` fails closed with a typed
+`unsupported` / `supabase_listing_draft_not_yet_wired` to
+prevent a Supabase-intake / local-listing hybrid. See
+[`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](corent_closed_alpha_intake_dispatch_smoke_note.md).
 
-- a founder-only canary route that exercises the full chain
-  (login → resolver → dispatcher → supabase writer) end-to-end
-  against `corent-dev`, gated by `requireFounderSession`;
-- replacing the static `SHARED_SERVER_MODE` constant with a
-  runtime probe that flips per-tester, controlled by a
-  `corent_alpha_*` cookie or per-profile feature row;
-- a documented switch behind `CORENT_BACKEND_MODE=supabase`
-  that is allowed only on a non-production target.
-
-In every variant, the visible chat intake UI stays on local
-persistence by default until the founder explicitly opts a
-session into the server-backed path.
+PR 5E (or later) — **listing draft externalization** — is the
+prerequisite for the visible client-adapter flip. Until listing
+draft persistence is externalized through the chat intake
+service (mirroring the `IntakeWriter` swappable shape for
+listing drafts), `SHARED_SERVER_MODE` stays `false` and the
+visible browser chat intake stays on the local-persistence demo
+path.
 
 ## References
 

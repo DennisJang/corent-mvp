@@ -31,6 +31,7 @@ import {
   ChatIntakeInputError,
   createChatListingIntakeService,
 } from "@/lib/services/chatListingIntakeService";
+import { getBackendMode } from "@/server/backend/mode";
 import { getIntakeWriter } from "@/server/intake/intakeWriterDispatcher";
 import { runIntentCommand } from "@/server/intents/intentCommand";
 import {
@@ -108,6 +109,36 @@ function intakeUnauthenticated<T>(): IntentResult<T> {
   return intentErr<T>(
     "unauthenticated",
     "supabase_mode_requires_auth_bound_actor",
+  );
+}
+
+// Slice A PR 5D — split-brain guard for `createIntakeListingDraftAction`.
+//
+// The chat intake service's `createListingDraftFromIntake` step
+// reads the session via the dispatched `IntakeWriter` (Supabase in
+// supabase-mode + supabase actor) but writes the *listing draft*
+// row through `getPersistence()` (local-only, even in supabase
+// mode). Letting that path run end-to-end in supabase mode would
+// produce a hybrid where:
+//
+//   - `listing_intake_sessions` row is in Supabase,
+//   - `listing_intake_messages` rows are in Supabase,
+//   - `listing_extractions` row is in Supabase,
+//   - `session.listingIntentId` (Supabase) points at a listing
+//     id that exists ONLY in localStorage.
+//
+// PR 5D forbids that combination. Until listing draft persistence
+// is externalized in a later PR (with its own migrations + tests),
+// `createIntakeListingDraftAction` fails closed in supabase mode
+// AFTER auth and capability checks but BEFORE any intake read or
+// write fires — so no partial state lands in Supabase either.
+//
+// The message is non-secret: no table names, no SQL, no env names,
+// no service-role hints, no row payloads.
+function intakeListingDraftUnsupportedInSupabase<T>(): IntentResult<T> {
+  return intentErr<T>(
+    "unsupported",
+    "supabase_listing_draft_not_yet_wired",
   );
 }
 
@@ -247,6 +278,17 @@ export async function createIntakeListingDraftAction(
       const writer = getIntakeWriter(actor);
       if (!writer) {
         return intakeUnauthenticated<CreateIntakeListingDraftResult>();
+      }
+      // Split-brain guard (PR 5D). Fires AFTER the unauthenticated
+      // gate so a mock-sourced actor in supabase mode still gets
+      // the existing `unauthenticated` shape; only the
+      // supabase-mode + supabase-sourced combination — the one
+      // where the intake side would land in Supabase but the
+      // listing draft would land in localStorage — hits this
+      // branch. The check runs before any service call so no
+      // partial state lands in Supabase.
+      if (getBackendMode() === "supabase") {
+        return intakeListingDraftUnsupportedInSupabase<CreateIntakeListingDraftResult>();
       }
       if (
         typeof payload.sessionId !== "string" ||

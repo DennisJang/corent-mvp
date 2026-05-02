@@ -14,12 +14,22 @@
 //
 // The shape is intentionally minimal — this is not a Result library.
 
+// Slice A PR 5D added `"unsupported"`. Semantics:
+//   - the request is shape-correct AND the actor is authorized,
+//   - but the *current configuration* cannot serve it safely
+//     (e.g. supabase-mode + supabase actor reaching an action
+//     whose downstream persistence has not been externalized yet
+//     and would otherwise create a Supabase-intake/local-listing
+//     split-brain).
+// Distinct from `internal` (unexpected throw) and `not_found`
+// (the target row does not exist).
 export type IntentErrorCode =
   | "unauthenticated"
   | "ownership"
   | "input"
   | "not_found"
   | "conflict"
+  | "unsupported"
   | "internal";
 
 export type IntentResult<T> =
