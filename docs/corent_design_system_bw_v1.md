@@ -974,6 +974,7 @@ It does **not** own:
 - **pre-revenue beta posture and runtime modes / feature flags** — see [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md);
 - **legal / trust boundaries** (C2C marketplace, no wallet, partner-mediated payment, regulated-language ban) — see [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md);
 - **security gate triggers** for real DB / auth / payment / file upload / location work — see [`corent_security_gate_note.md`](corent_security_gate_note.md).
+- **route / product UX principles** (state clarity, trust transparency, motion posture, role-based flows) — see [`corent_ux_system_v1.md`](corent_ux_system_v1.md).
 
 If a product, fee, geography, or scope decision appears to conflict with this document, **the documents above win**. Visual rules in this document remain authoritative for visual decisions only.
 

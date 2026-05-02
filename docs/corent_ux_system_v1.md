@@ -98,6 +98,133 @@ specific surface, the higher-numbered one yields.
    `src/lib/copy/copyGuardrails.test.ts` is the executable form of
    this principle; this document is the source.
 
+### Design reconnaissance principles
+
+The following principles record the design-system reconnaissance
+findings as future UX guidance. They do **not** approve an immediate
+UI redesign, animation pass, third brand color, or component rewrite.
+
+#### Premium = restraint, not decoration
+
+A CoRent surface earns a premium feeling by removing noise, not by
+adding decoration. Before adding color, imagery, iconography, or
+animation, first prove that typography, spacing, line, weight,
+label, and layout cannot carry the meaning.
+
+#### 3-second test per surface
+
+Every major screen must answer these three questions within 3
+seconds:
+
+- what this is
+- what state the user is in
+- what they should do next
+
+This applies especially to the landing page, item detail, seller
+dashboard, chat-to-listing intake card, rental status timeline,
+public storefront, and product cards.
+
+#### 60-30-10 is attention budget, not color count
+
+CoRent remains primarily a black/white system. Do not add a third
+brand color to satisfy 60-30-10. Interpret the ratio as:
+
+- **60 = calm surface**
+- **30 = structural ink**
+- **10 = trust / action signal**
+
+The 10% signal can be expressed through type weight, border
+strength, dashed-vs-solid line, label, badge, position, numbering,
+motion, or limited semantic color only if all non-color levers are
+insufficient.
+
+A screen that is entirely calm surface can become opaque, not
+premium. Every screen should spend its 10% signal on the one
+state/action that actually matters.
+
+#### State changes are emotional moments
+
+Approval, request arrival, pickup, return, claim, settlement, and
+trust changes involve belongings, money, and reputation. The UI must
+visibly acknowledge these changes without becoming celebratory or
+decorative.
+
+Acknowledgement should be a change in label, weight, line, position,
+or tightly scoped motion; not confetti, gradients, or decorative
+illustration.
+
+#### Transparency is the product feeling
+
+Trust is a product feeling, not only a security property. Users
+should understand:
+
+- what is public
+- what is private
+- what is beta / local / mock
+- what was AI-extracted
+- what was seller-confirmed
+- what was system-generated
+- what was admin / founder-reviewed
+- who needs to act next
+- why the current state exists
+
+#### Motion confirms, never decorates
+
+Motion exists only to make meaningful state changes visible.
+Allowed motion candidates:
+
+- chat message added
+- draft extracted
+- listing approved
+- request arrived
+- seller approved
+- pickup confirmed
+- return confirmed
+- claim window opened / closed
+- settlement state changed
+
+Avoid decorative page-entry motion, ornamental hover animation, or
+animation used only to "feel premium."
+
+#### Preserve existing non-color trust signals
+
+The following signals are load-bearing and must not be repurposed
+casually:
+
+- dashed line = pending / inferred / suggested / fallback
+- solid / strong line = confirmed / selected / currently relevant
+- numbered 01 / 02 / 03 pattern = procedural trust and premium
+  structure
+- `(베타)` suffix on money-adjacent states = honesty / trust posture
+- four Badge variants = constrained status language
+- black/white plus ink opacity scale = brand-level decision
+- no shadows / no gradients = intentional restraint
+
+#### Empty / mechanical / opaque risk areas to track
+
+These are future watch items, not immediate implementation work:
+
+- landing page has only one graphic moment and can read overly
+  typographic
+- product cards lack glance-affordance without photos or stronger
+  item cues
+- item detail right rail is visually flat despite dense information
+- seller dashboard lacks rhythm and "what changed" signals
+- timeline reads like a status table rather than a journey
+- dashed-vs-solid semantics are consistent but currently untaught
+- trust summary counts lack micro-explanations
+- footer copy "안전 보증" should be reviewed later for
+  guarantee-like wording
+
+#### Do-not-change-yet guidance
+
+This note approves no immediate UI redesign. Do not add a third
+color yet. Do not add animation libraries yet. Do not replace the
+black/white system. Do not loosen copy guardrails. Do not repurpose
+dashed borders for decoration. Do not remove beta/local honesty
+labels. Do not replace numbered procedural lists with decorative
+icons.
+
 ## 4. Role-Based UX
 
 ### Seller
