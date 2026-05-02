@@ -1,7 +1,10 @@
 # Phase 2 Marketplace Schema Draft
 
 Status: **DRAFT**, dev-only.
-Source migration: [`supabase/migrations/20260430120000_phase2_marketplace_draft.sql`](../supabase/migrations/20260430120000_phase2_marketplace_draft.sql)
+Source migrations:
+- [`supabase/migrations/20260430120000_phase2_marketplace_draft.sql`](../supabase/migrations/20260430120000_phase2_marketplace_draft.sql) — profiles, listings, rental_intents, etc.
+- [`supabase/migrations/20260502120000_phase2_intake_draft.sql`](../supabase/migrations/20260502120000_phase2_intake_draft.sql) — chat-to-listing intake (Slice A, PR 1)
+
 Target project: `corent-dev` (region `ap-northeast-2`).
 Production: NEVER applied.
 
@@ -42,6 +45,9 @@ a security review note first.
 | `rental_events`         | Append-only state-transition log.                        | Low         | Deny all       | Borrower/seller read own intent's events |
 | `admin_reviews`         | Founder/admin review queue (listings, rental_intents).   | Low         | Deny all       | Admin-only                        |
 | `admin_actions`         | Append-only admin action audit log.                      | Low         | Deny all       | Admin-only                        |
+| `listing_intake_sessions` | Slice A: one row per chat-to-listing seller session.   | Medium      | Deny all       | Seller reads own; admin reads all |
+| `listing_intake_messages` | Slice A: append-only chat log per session (raw chat).  | High        | Deny all       | Seller reads own; admin reads on review |
+| `listing_extractions`   | Slice A: deterministic extractor snapshot per session.   | Medium      | Deny all       | Seller reads own; admin reads on review |
 
 Plus one view:
 
@@ -81,6 +87,116 @@ Fields **deliberately not present** in this schema:
 - exact GPS coordinates
 - session tokens / refresh tokens
 - raw AI parser prompts/responses
+
+---
+
+## Slice A — chat-to-listing intake (PR 1, schema-only)
+
+Source migration:
+[`supabase/migrations/20260502120000_phase2_intake_draft.sql`](../supabase/migrations/20260502120000_phase2_intake_draft.sql)
+
+This is the first DB-backed slice from the externalization plan
+([`docs/corent_externalization_architecture_v1.md`](corent_externalization_architecture_v1.md)
+§13 task 1). It is **schema-only**: no service code is wired to the
+new tables in this PR. Runtime behavior after this migration applies
+is unchanged — `getPersistence()` continues to return the local
+memory / localStorage adapter pair.
+
+### Tables
+
+| Table | Mirrors TS type | Append-only? | Cap notes |
+| --- | --- | --- | --- |
+| `listing_intake_sessions` | `IntakeSession` (`src/domain/intake.ts`) | no | status enum: `drafting` / `draft_created` / `abandoned` |
+| `listing_intake_messages` | `IntakeMessage` | **yes** (DB trigger) | `content` capped at 2,000 chars (mirrors `RAW_INPUT_MAX`) |
+| `listing_extractions` | `IntakeExtraction` | upsert by `session_id` | numeric / text caps mirror the listing validator |
+
+### Append-only enforcement
+
+`listing_intake_messages` has a `before update or delete` trigger
+that calls a new generic `public.reject_modify()` function. The
+function raises `append_only_table_rejects_modify` so a future bug
+in the application path cannot silently rewrite history. The same
+helper is intended for future `rental_events`, `trust_events`, and
+`notification_events` migrations.
+
+### Foreign-key directions
+
+- `listing_intake_sessions.seller_id → profiles(id) ON DELETE RESTRICT`
+  — sellers cannot be deleted while sessions exist; matches the
+  posture of `listings.seller_id`.
+- `listing_intake_sessions.listing_intent_id → listings(id) ON DELETE
+  SET NULL` — an audit trail survives a hard-delete of the listing.
+  The TS code calls these "listing intents"; the SQL table is named
+  `listings`.
+- `listing_intake_messages.session_id → listing_intake_sessions(id)
+  ON DELETE CASCADE` — server-role-only deletes propagate.
+- `listing_extractions.session_id → listing_intake_sessions(id) ON
+  DELETE CASCADE` — same posture.
+
+### RLS posture
+
+RLS is enabled on every new table with **no permissive policies**.
+Anon and authenticated are denied by default; the service-role
+client (server-only) bypasses RLS for reads/writes. Future
+seller-reads-own + admin-reads-all policies are deferred to a later
+PR after the Supabase intake repository lands and an auth-bound
+actor is in place.
+
+### Migration apply status
+
+**Not tested.** The Slice A migration was authored and statically
+reviewed in an environment that has neither the `supabase` CLI nor
+`psql` available. The migration has NOT been applied to a real
+Postgres / Supabase project, and its SQL has NOT been validated by a
+parser. It has been:
+
+- statically read against the existing parent migration
+  (`20260430120000_phase2_marketplace_draft.sql`) for style and
+  pattern alignment;
+- structurally sanity-checked (balanced `do $$ begin … end $$;`
+  blocks, 4 / 4; one `as $$ … $$;` function body);
+- cross-checked against the TypeScript domain in
+  `src/domain/intake.ts` and the service caps in
+  `src/lib/services/chatListingIntakeService.ts` /
+  `src/lib/validators/listingInput.ts`.
+
+Before Slice A PR 2 (the Supabase intake repository) lands, this
+migration must be applied to the dev project (`corent-dev`) at
+least once and the resulting tables / enums / triggers / function
+must be verified to exist as designed. The repository implementation
+in PR 2 will then be tested against that real DB.
+
+### What is intentionally NOT in this PR
+
+- No Supabase intake repository (`src/server/persistence/supabase/intakeRepository.ts`).
+- No service wiring; `chatListingIntakeService` continues to call
+  `getPersistence()`.
+- No client adapter changes; `src/lib/client/chatIntakeClient.ts`
+  keeps `SHARED_SERVER_MODE = false`.
+- No authenticated RLS policies.
+- No raw chat retention job. Target retention remains **90 days**
+  per [`docs/corent_externalization_architecture_v1.md`](corent_externalization_architecture_v1.md)
+  §11; implementation is a separate later PR.
+- No public listing publication table, no rental / handoff / claim /
+  trust / notification schema. Each is a later slice.
+
+### Related executable contracts (must continue to pass)
+
+- Persistence snapshot parity contract —
+  [`src/lib/adapters/persistence/persistence.test.ts`](../src/lib/adapters/persistence/persistence.test.ts).
+  The future Supabase intake repository must satisfy the same
+  snapshot semantics (read returns a snapshot, mutation-after-save
+  cannot corrupt persisted state).
+- Public projection privacy contract —
+  [`src/lib/services/publicListingService.test.ts`](../src/lib/services/publicListingService.test.ts).
+  No raw chat / extraction internals / intake session ids may leak
+  through any public surface, even after a forced approval.
+- Chat intake server actor boundary —
+  [`src/server/intake/actions.test.ts`](../src/server/intake/actions.test.ts).
+  Server actions resolve the actor server-side; the payload never
+  carries an `actorSellerId`. The future Supabase repo continues to
+  honor this — actor identity is a server-only field, never a
+  payload column.
 
 ---
 
@@ -202,9 +318,19 @@ adapter side; the constraints catch any drift.
 
 ## Rollback notes
 
-The migration is additive. A rollback path is:
+The migration is additive. Slice A's intake schema rolls back first,
+then the parent marketplace migration. A rollback path is:
 
 ```sql
+-- Slice A intake (20260502120000_phase2_intake_draft.sql)
+drop table if exists public.listing_extractions       cascade;
+drop table if exists public.listing_intake_messages   cascade;
+drop table if exists public.listing_intake_sessions   cascade;
+drop function if exists public.reject_modify();
+drop type if exists public.intake_message_role;
+drop type if exists public.intake_session_status;
+
+-- Phase 2 marketplace (20260430120000_phase2_marketplace_draft.sql)
 drop view if exists public.listings_public;
 drop table if exists public.admin_actions cascade;
 drop table if exists public.admin_reviews cascade;
