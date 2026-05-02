@@ -1,0 +1,235 @@
+-- =========================================================================
+-- TEMPLATE ONLY — DO NOT RUN AS-IS
+-- =========================================================================
+--
+-- Closed-alpha profile / capability provisioning template.
+-- Slice A PR 5B. Documentation file. NOT an executable seed.
+--
+-- This file lives at `docs/sql_templates/closed_alpha_profile_capabilities.sql`
+-- on purpose: it is OUTSIDE every path the Supabase CLI scans for
+-- automatic application (`supabase/seed.sql`, `supabase/seeds/*.sql`,
+-- `supabase/migrations/*.sql`). Do NOT copy this file under any of those
+-- paths. It must remain a reference template under `docs/`.
+--
+-- Why every value is a placeholder:
+--   - No real auth user ids may be checked into the repo.
+--   - No real emails may be checked into the repo.
+--   - No identity values may be inferred from this file by anyone other
+--     than the founder, who substitutes them at the point of use.
+--
+-- Apply only via:
+--   - the Supabase SQL editor against `corent-dev`, AND
+--   - by the founder, with explicit intent, after confirming the
+--     security review gate (`docs/corent_security_gate_note.md`) and
+--     the agent-loop approval gates (`docs/agent_loop.md`).
+--
+-- Do NOT apply via `supabase db push`, `supabase db reset`, `--db-url`,
+-- or any agent-driven path. Claude Code, Codex, and any other agent
+-- MUST NOT run this template against any remote project on behalf of
+-- the founder. Local-only application against a self-hosted Supabase
+-- instance is also gated by founder approval.
+--
+-- All inserts use `on conflict do nothing` so the template is safe to
+-- re-apply with the same UUIDs. None of the statements below
+-- TRUNCATE, DELETE, GRANT, ALTER, or change RLS.
+--
+-- =========================================================================
+-- Placeholders (substitute in your local copy before running)
+-- =========================================================================
+--
+--   <<AUTH_USER_ID_UUID>>      uuid from auth.users.id; this BECOMES
+--                              the profiles.id value
+--   <<TESTER_EMAIL>>           tester contact email (≤ 128 chars, must
+--                              match auth.users.email)
+--   <<TESTER_DISPLAY_NAME>>    short bounded display name (≤ 60 chars)
+--   <<REGION_COARSE>>          one of: 'seoul' | 'busan' | 'incheon'
+--                              | 'gyeonggi' | 'other_metro'
+--                              | 'non_metro' | 'unknown'
+--   <<SELLER_DISPLAY_NAME>>    seller-side display name (≤ 60 chars)
+--   <<SELLER_TRUST_NOTE>>      short note (≤ 240 chars) — closed-alpha
+--                              copy; never marketing
+--   <<BORROWER_DISPLAY_NAME>>  borrower-side display name (≤ 60 chars)
+--   <<BORROWER_TRUST_SIGNAL>>  one of: 'verified_first' | 'low_deposit'
+--                              | 'closest'
+--
+-- =========================================================================
+-- 1) profiles row (REQUIRED for any capability)
+-- =========================================================================
+--
+-- The profiles.id MUST equal the corresponding auth.users.id. There is
+-- no FK to auth.users; the convention is enforced by code path.
+--
+-- This is the canonical account row. Without it, no capability row may
+-- be inserted (FK from seller_profiles / borrower_profiles to
+-- profiles(id) would reject the insert).
+
+-- insert into public.profiles (id, email, display_name, region_coarse)
+-- values (
+--   '<<AUTH_USER_ID_UUID>>',
+--   '<<TESTER_EMAIL>>',
+--   '<<TESTER_DISPLAY_NAME>>',
+--   '<<REGION_COARSE>>'
+-- )
+-- on conflict (id) do nothing;
+
+-- =========================================================================
+-- 2) Capability examples — pick exactly ONE block per tester
+-- =========================================================================
+
+-- -------------------------------------------------------------------------
+-- 2a) Seller-only tester (most common closed-alpha case)
+-- -------------------------------------------------------------------------
+-- Adds the seller capability row. The borrower_profiles row is NOT
+-- inserted; the tester cannot perform borrower-only flows (when those
+-- ship). Slice A seller chat intake works for this tester after PR 5C
+-- ships the sign-in route.
+
+-- insert into public.seller_profiles (
+--   profile_id, display_name, trust_note,
+--   trust_score, review_count, joined_at
+-- )
+-- values (
+--   '<<AUTH_USER_ID_UUID>>',
+--   '<<SELLER_DISPLAY_NAME>>',
+--   '<<SELLER_TRUST_NOTE>>',
+--   null,        -- closed-alpha: no synthesized score
+--   0,
+--   current_date
+-- )
+-- on conflict (profile_id) do nothing;
+
+-- -------------------------------------------------------------------------
+-- 2b) Borrower-only tester
+-- -------------------------------------------------------------------------
+-- Adds the borrower capability row only. Seller chat intake fails
+-- closed for this tester (resolver returns a renter actor; the action's
+-- expectedActorKind: "seller" maps the result to code: "ownership").
+
+-- insert into public.borrower_profiles (
+--   profile_id, display_name, preferred_trust_signal
+-- )
+-- values (
+--   '<<AUTH_USER_ID_UUID>>',
+--   '<<BORROWER_DISPLAY_NAME>>',
+--   '<<BORROWER_TRUST_SIGNAL>>'
+-- )
+-- on conflict (profile_id) do nothing;
+
+-- -------------------------------------------------------------------------
+-- 2c) Dual-capability tester (same profile, both rows)
+-- -------------------------------------------------------------------------
+-- Adds both capability rows for the same profile id. The closed-alpha
+-- account model treats buyer and seller as orthogonal capabilities;
+-- this is the supported representation. The resolver picks a kind via
+-- the action's prefer option (chat intake passes prefer: "seller").
+
+-- insert into public.seller_profiles (
+--   profile_id, display_name, trust_note,
+--   trust_score, review_count, joined_at
+-- )
+-- values (
+--   '<<AUTH_USER_ID_UUID>>',
+--   '<<SELLER_DISPLAY_NAME>>',
+--   '<<SELLER_TRUST_NOTE>>',
+--   null,
+--   0,
+--   current_date
+-- )
+-- on conflict (profile_id) do nothing;
+--
+-- insert into public.borrower_profiles (
+--   profile_id, display_name, preferred_trust_signal
+-- )
+-- values (
+--   '<<AUTH_USER_ID_UUID>>',
+--   '<<BORROWER_DISPLAY_NAME>>',
+--   '<<BORROWER_TRUST_SIGNAL>>'
+-- )
+-- on conflict (profile_id) do nothing;
+
+-- =========================================================================
+-- 3) Verification queries (read-only)
+-- =========================================================================
+--
+-- Run after the inserts to confirm the expected shape. None of these
+-- statements mutate; they are safe to re-run.
+
+-- -- Profile row exists for this tester:
+-- select id, email, display_name, region_coarse, created_at
+--   from public.profiles
+--  where id = '<<AUTH_USER_ID_UUID>>';
+
+-- -- Capability summary for this tester:
+-- select
+--   p.id                                 as profile_id,
+--   p.display_name                       as profile_display_name,
+--   (sp.profile_id is not null)          as has_seller,
+--   (bp.profile_id is not null)          as has_borrower,
+--   sp.display_name                      as seller_display_name,
+--   bp.display_name                      as borrower_display_name
+-- from public.profiles p
+-- left join public.seller_profiles  sp on sp.profile_id = p.id
+-- left join public.borrower_profiles bp on bp.profile_id = p.id
+-- where p.id = '<<AUTH_USER_ID_UUID>>';
+
+-- -- Fan-out from this profile (rows that would cascade on profile delete):
+-- select 'listings'              as related_table, count(*) from public.listings              where seller_id = '<<AUTH_USER_ID_UUID>>'
+-- union all select 'rental_intents (seller)',     count(*) from public.rental_intents        where seller_id = '<<AUTH_USER_ID_UUID>>'
+-- union all select 'rental_intents (borrower)',   count(*) from public.rental_intents        where borrower_id = '<<AUTH_USER_ID_UUID>>'
+-- union all select 'listing_intake_sessions',     count(*) from public.listing_intake_sessions where seller_id = '<<AUTH_USER_ID_UUID>>';
+
+-- =========================================================================
+-- 4) Rollback snippets (manual, founder-only)
+-- =========================================================================
+--
+-- Use only to revoke a closed-alpha tester or rotate a fixture. Run
+-- the verification queries above first to confirm fan-out. The
+-- listings / rental_intents / intake sessions tables reference the
+-- profile via `references public.profiles(id) on delete restrict`
+-- (listings, rental_intents) or `on delete set null` (some
+-- borrower_id columns), so DELETE on profiles will fail unless the
+-- referencing rows are removed or detached first. The capability
+-- tables themselves cascade.
+
+-- -- 4a) Revoke seller capability only:
+-- delete from public.seller_profiles
+--  where profile_id = '<<AUTH_USER_ID_UUID>>';
+
+-- -- 4b) Revoke borrower capability only:
+-- delete from public.borrower_profiles
+--  where profile_id = '<<AUTH_USER_ID_UUID>>';
+
+-- -- 4c) Remove the entire profile (only after fan-out is cleared):
+-- --      Confirm with the fan-out verification query first; the FK
+-- --      from listings / rental_intents is `on delete restrict`, so
+-- --      this will error if the tester has listings or rental_intents.
+-- delete from public.profiles
+--  where id = '<<AUTH_USER_ID_UUID>>';
+
+-- =========================================================================
+-- WARNINGS
+-- =========================================================================
+--
+--   ⚠ Running this template against `corent-dev` REQUIRES explicit
+--     founder approval. No agent (Claude Code, Codex, or otherwise)
+--     may run it on the founder's behalf. The founder runs the
+--     substituted SQL in the Supabase SQL editor, signed in to their
+--     own account.
+--
+--   ⚠ Do NOT commit a substituted copy of this file. Substitute
+--     placeholders only in a working copy that stays out of git, or
+--     paste directly into the SQL editor.
+--
+--   ⚠ Do NOT add this file (or a copy of it) under
+--     `supabase/seed.sql`, `supabase/seeds/`, or
+--     `supabase/migrations/`. Those paths can be picked up by the
+--     Supabase CLI automatically. The provisioning template is a
+--     human-driven, one-tester-at-a-time step.
+--
+--   ⚠ The closed-alpha posture forbids automatic creation of
+--     `profiles`, `seller_profiles`, or `borrower_profiles` rows.
+--     This template is the only approved provisioning path. Any
+--     change to that posture requires an explicit gate per
+--     `docs/agent_loop.md`.
+--
+-- =========================================================================

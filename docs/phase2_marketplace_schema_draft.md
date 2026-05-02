@@ -511,21 +511,30 @@ service's existing try/catch surfaces it via the runner's
   Supabase client. The test also asserts the mock-actor + supabase
   combination never reaches the writer.
 
-### PR 5 prerequisites (PR 5A landed — actor resolution only)
+### PR 5 prerequisites (PR 5A + 5B landed — actor resolution + manual provisioning workflow)
 
 PR 5 is the auth + dispatch-flip slice. PR 5A landed the
-**closed-alpha actor resolution** prerequisite (item 3 below); the
-remaining three items still gate the dispatch flip.
+**closed-alpha actor resolution** prerequisite. PR 5B added the
+**manual closed-alpha provisioning workflow** as documentation +
+template (the founder-only path that gives PR 5A's resolver a
+data model to read). The remaining items still gate the dispatch
+flip.
 
 1. **Seller / renter auth route** — magic-link + callback,
    mirroring the founder-admin pattern in
    [`src/server/admin/auth.ts`](../src/server/admin/auth.ts) +
    [`src/server/admin/supabase-ssr.ts`](../src/server/admin/supabase-ssr.ts).
-   *Not in PR 5A.*
-2. **`seller_profiles` registration flow** — explicit opt-in,
-   founder-approved. PR 5A explicitly does **not** auto-create
-   `seller_profiles`; closed-alpha rows are seeded by the founder
-   out-of-band. *Not in PR 5A.*
+   *Tracked as PR 5C.* Not in PR 5A or 5B.
+2. ✅ **Closed-alpha provisioning workflow (manual, founder-only)** —
+   landed in PR 5B as documentation. The provisioning path is
+   founder-driven: a manual SQL template at
+   [`docs/sql_templates/closed_alpha_profile_capabilities.sql`](./sql_templates/closed_alpha_profile_capabilities.sql)
+   the founder substitutes per tester and applies via the Supabase
+   SQL editor. PR 5B explicitly does **not** auto-create
+   `profiles` / `seller_profiles` / `borrower_profiles`, does not
+   add an auth route, does not flip the runtime, and does not
+   apply anything against `corent-dev`. See
+   [`docs/corent_closed_alpha_provisioning_workflow.md`](./corent_closed_alpha_provisioning_workflow.md).
 3. ✅ **`auth.uid → profiles + capability` resolver** — landed in
    PR 5A. `resolveServerActor` reads the SSR session via
    [`createAdminAuthClient`](../src/server/admin/supabase-ssr.ts),
@@ -537,12 +546,14 @@ remaining three items still gate the dispatch flip.
    [`docs/corent_closed_alpha_actor_resolver_note.md`](./corent_closed_alpha_actor_resolver_note.md).
 4. **Client adapter flip** — flip `SHARED_SERVER_MODE` in
    `chatIntakeClient.ts` (or replace it with a runtime probe of
-   the server's mode). *Not in PR 5A.*
+   the server's mode). *Tracked as PR 5D.* Not in PR 5A or 5B.
 
-Once items 1, 2, and 4 are in place, PR 4's dispatcher seam goes
-live without further changes to the chat intake actions or
-service — the wiring is already in place and PR 5A's resolver
-fulfills the auth-bound `source: "supabase"` actor contract.
+Once items 1 and 4 are in place (PR 5C, then PR 5D), PR 4's
+dispatcher seam goes live without further changes to the chat
+intake actions or service — the wiring is already in place and
+PR 5A's resolver fulfills the auth-bound `source: "supabase"`
+actor contract using profile / capability rows seeded via the
+PR 5B workflow.
 
 ### Related executable contracts (must continue to pass)
 
