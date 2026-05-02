@@ -11,6 +11,11 @@
 import type { CategoryId } from "@/domain/categories";
 import type { DurationDays } from "@/domain/durations";
 import type {
+  IntakeExtractionField,
+  IntakeMessageRole,
+  IntakeSessionStatus,
+} from "@/domain/intake";
+import type {
   ListingStatus,
   RentalIntentStatus,
   VerificationStatus,
@@ -240,4 +245,157 @@ export function validateItemCondition(s: unknown): ValidationResult<
     return { ok: true, value: s };
   }
   return { ok: false, error: "item condition not allowed" };
+}
+
+// --------------------------------------------------------------
+// Chat-to-listing intake validators
+//
+// Mirrors the schema in
+// `supabase/migrations/20260502120000_phase2_intake_draft.sql` and the
+// TS domain in `src/domain/intake.ts`. These are shape validators
+// only — actor identity / ownership / authorization remain the
+// service-layer concern.
+// --------------------------------------------------------------
+
+const INTAKE_SESSION_STATUSES: ReadonlySet<IntakeSessionStatus> =
+  new Set<IntakeSessionStatus>(["drafting", "draft_created", "abandoned"]);
+
+const INTAKE_MESSAGE_ROLES: ReadonlySet<IntakeMessageRole> =
+  new Set<IntakeMessageRole>(["seller", "assistant", "system"]);
+
+// Mirrors the `IntakeExtractionField` TS union. Anything outside this
+// set is rejected on write and silently filtered on read (see
+// `validateMissingFieldsForWrite` and `normalizeMissingFieldsForRead`).
+const INTAKE_EXTRACTION_FIELDS: ReadonlySet<IntakeExtractionField> =
+  new Set<IntakeExtractionField>([
+    "itemName",
+    "category",
+    "pickupArea",
+    "estimatedValue",
+    "condition",
+    "defects",
+    "oneDayPrice",
+  ]);
+
+const INTAKE_MESSAGE_CONTENT_MAX = 2000;
+
+export function validateIntakeSessionStatus(
+  s: unknown,
+): ValidationResult<IntakeSessionStatus> {
+  if (
+    typeof s !== "string" ||
+    !INTAKE_SESSION_STATUSES.has(s as IntakeSessionStatus)
+  ) {
+    return { ok: false, error: "intake session status not allowed" };
+  }
+  return { ok: true, value: s as IntakeSessionStatus };
+}
+
+export function validateIntakeMessageRole(
+  s: unknown,
+): ValidationResult<IntakeMessageRole> {
+  if (
+    typeof s !== "string" ||
+    !INTAKE_MESSAGE_ROLES.has(s as IntakeMessageRole)
+  ) {
+    return { ok: false, error: "intake message role not allowed" };
+  }
+  return { ok: true, value: s as IntakeMessageRole };
+}
+
+export function validateIntakeMessageContent(
+  s: unknown,
+): ValidationResult<string> {
+  return validateRequiredText(s, "intake content", INTAKE_MESSAGE_CONTENT_MAX);
+}
+
+// Write path: reject any unknown entry, reject duplicates, reject
+// non-array shapes. The repository never silently rewrites caller
+// intent on the way in — fail closed.
+export function validateMissingFieldsForWrite(
+  arr: unknown,
+): ValidationResult<IntakeExtractionField[]> {
+  if (!Array.isArray(arr)) {
+    return { ok: false, error: "missing_fields must be an array" };
+  }
+  const seen = new Set<IntakeExtractionField>();
+  const out: IntakeExtractionField[] = [];
+  for (const v of arr) {
+    if (
+      typeof v !== "string" ||
+      !INTAKE_EXTRACTION_FIELDS.has(v as IntakeExtractionField)
+    ) {
+      return { ok: false, error: `missing_fields entry not allowed: ${String(v)}` };
+    }
+    const f = v as IntakeExtractionField;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    out.push(f);
+  }
+  return { ok: true, value: out };
+}
+
+// Read path: tolerate enum drift. The persisted JSONB array might
+// carry values that were valid in a future schema or that came from
+// a stale import; we filter unknown / wrong-typed entries silently
+// rather than failing the whole row read. Extraction is best-effort
+// derived data — the seller can re-extract from the raw chat if a
+// row is incomplete. Order is preserved; duplicates are dropped.
+export function normalizeMissingFieldsForRead(
+  raw: unknown,
+): IntakeExtractionField[] {
+  if (!Array.isArray(raw)) return [];
+  const seen = new Set<IntakeExtractionField>();
+  const out: IntakeExtractionField[] = [];
+  for (const v of raw) {
+    if (typeof v !== "string") continue;
+    if (!INTAKE_EXTRACTION_FIELDS.has(v as IntakeExtractionField)) continue;
+    const f = v as IntakeExtractionField;
+    if (seen.has(f)) continue;
+    seen.add(f);
+    out.push(f);
+  }
+  return out;
+}
+
+export function validateOptionalEstimatedValue(
+  n: unknown,
+): ValidationResult<number | null> {
+  if (n === null || n === undefined) return { ok: true, value: null };
+  return validateEstimatedValue(n) as ValidationResult<number | null>;
+}
+
+export function validateOptionalPrice(
+  n: unknown,
+  label: string,
+): ValidationResult<number | null> {
+  if (n === null || n === undefined) return { ok: true, value: null };
+  return validatePrice(n, label) as ValidationResult<number | null>;
+}
+
+export function validateOptionalItemName(
+  s: unknown,
+): ValidationResult<string | null> {
+  // Extraction may produce no item name; the column is nullable. The
+  // length cap mirrors the listing validator (120) which is wider
+  // than the listings.item_name SQL cap (80) intentionally — the
+  // extraction can hold a longer raw guess; the listing edit step
+  // tightens it.
+  return validateBoundedText(s, "extraction item_name", 120, false);
+}
+
+export function validateOptionalItemCondition(
+  s: unknown,
+): ValidationResult<"new" | "like_new" | "lightly_used" | "used" | null> {
+  if (s === null || s === undefined) return { ok: true, value: null };
+  return validateItemCondition(s) as ValidationResult<
+    "new" | "like_new" | "lightly_used" | "used" | null
+  >;
+}
+
+export function validateOptionalCategory(
+  s: unknown,
+): ValidationResult<CategoryId | null> {
+  if (s === null || s === undefined) return { ok: true, value: null };
+  return validateCategory(s) as ValidationResult<CategoryId | null>;
 }

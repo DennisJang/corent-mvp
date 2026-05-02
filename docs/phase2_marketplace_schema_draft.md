@@ -169,6 +169,7 @@ in PR 2 will then be tested against that real DB.
 ### What is intentionally NOT in this PR
 
 - No Supabase intake repository (`src/server/persistence/supabase/intakeRepository.ts`).
+  *(Status updated: now landed in PR 2 — see "Slice A PR 2" below.)*
 - No service wiring; `chatListingIntakeService` continues to call
   `getPersistence()`.
 - No client adapter changes; `src/lib/client/chatIntakeClient.ts`
@@ -179,6 +180,117 @@ in PR 2 will then be tested against that real DB.
   §11; implementation is a separate later PR.
 - No public listing publication table, no rental / handoff / claim /
   trust / notification schema. Each is a later slice.
+
+---
+
+## Slice A — PR 2: Supabase intake repository (server-only)
+
+Source files:
+- [`src/server/persistence/supabase/intakeRepository.ts`](../src/server/persistence/supabase/intakeRepository.ts)
+- [`src/server/persistence/supabase/intakeRepository.test.ts`](../src/server/persistence/supabase/intakeRepository.test.ts)
+- [`src/server/persistence/supabase/validators.ts`](../src/server/persistence/supabase/validators.ts)
+  (extended with intake validators)
+
+PR 2 adds the **server-only** repository layer that the future PR 3
+will wire `chatListingIntakeService` to. Today nothing in the running
+app calls it — `getPersistence()` continues to return the local
+memory / localStorage adapter pair, the chat intake server actions
+unchanged, and `src/lib/client/chatIntakeClient.ts` still has
+`SHARED_SERVER_MODE = false`.
+
+### Methods exposed
+
+Mirrors the chat intake slice of `PersistenceAdapter`:
+
+| Repo function | Domain method it backs |
+| --- | --- |
+| `saveIntakeSession(session)` | `saveIntakeSession` |
+| `getIntakeSession(id)` | `getIntakeSession` |
+| `listIntakeSessions(limit?)` | `listIntakeSessions` |
+| `appendIntakeMessage(message)` | `appendIntakeMessage` (insert-only) |
+| `listIntakeMessagesForSession(sessionId)` | `listIntakeMessagesForSession` |
+| `saveIntakeExtraction(extraction)` | `saveIntakeExtraction` |
+| `getIntakeExtractionForSession(sessionId)` | `getIntakeExtractionForSession` |
+
+### Row → domain normalization
+
+- Sessions, messages: 1:1 column ↔ field mapping; `listing_intent_id`
+  null ↔ `listingIntentId` undefined.
+- Extraction `components`: empty `text[]` is folded to `undefined` on
+  read so the round-trip matches the in-memory shape produced by
+  `chatIntakeExtractor.ts`.
+- Extraction `missing_fields` (jsonb):
+  - **Write-path strict**: `validateMissingFieldsForWrite` rejects
+    any unknown / wrong-typed entry; duplicates are dropped. Fail
+    closed.
+  - **Read-path tolerant**: `normalizeMissingFieldsForRead` filters
+    unknown / wrong-typed entries silently and preserves order. Read
+    tolerance is intentional — extraction is best-effort metadata
+    that can be recomputed from the raw chat; failing a whole row
+    on enum drift would be worse than dropping a stray entry.
+
+The decision is documented in
+[`src/server/persistence/supabase/validators.ts`](../src/server/persistence/supabase/validators.ts)
+above the helper functions.
+
+### Validation boundary (shape-only)
+
+The repository is shape validation only. It does **not**:
+
+- resolve actor identity (the intake server actions do, via
+  `resolveServerActor`),
+- enforce ownership / role policy,
+- enforce status transitions (`drafting → draft_created` etc.),
+- expose any raw-chat read path to the public projection layer.
+
+Every input is run through validators in
+[`src/server/persistence/supabase/validators.ts`](../src/server/persistence/supabase/validators.ts).
+Untrusted shapes (non-UUID ids, unknown enums, oversized text,
+out-of-bound numerics, unknown extraction fields) are rejected
+before any DB call.
+
+### Append-only enforcement
+
+`appendIntakeMessage` exposes only `.insert(...)` — there is no
+update / upsert / delete path. The DB-level trigger
+`listing_intake_messages_reject_modify` (added by Slice A PR 1) is
+the durable backstop.
+
+### Test strategy
+
+Default `npm test` runs against a mocked marketplace client. The
+test file `intakeRepository.test.ts`:
+
+- mocks `getMarketplaceClient` so no env / network is required;
+- asserts the client-unavailable safe path (returns `null` / `[]` /
+  `{ ok: false }`) for every method;
+- asserts validator boundaries on every `save*` / `appendIntakeMessage`
+  call;
+- asserts row → domain mappers via the `_mappers` test seam;
+- asserts JSONB write-strictness vs read-tolerance for `missing_fields`;
+- asserts `appendIntakeMessage` uses INSERT and never UPSERT.
+
+**Integration tests against a real Supabase project are NOT in
+this PR.** When PR 3 lands and the migration has been applied to a
+dev project, an env-gated `*.integration.test.ts` will skip cleanly
+when the SUPABASE_* env vars are missing.
+
+### Migration apply status
+
+**Still UNVERIFIED in this environment.** The Slice A PR 1
+migration (`20260502120000_phase2_intake_draft.sql`) has not been
+applied to a real Postgres / Supabase project from this machine
+because the canonical environment lacks the `supabase` CLI, `psql`,
+and any container runtime. PR 2's repository code therefore
+conforms to the documented schema by static review only — the
+columns, constraints, triggers, and enum values it expects are
+those declared in the PR 1 migration source, but no live insert /
+read has been exercised against them.
+
+PR 3 wiring (the chat intake service flipping to the repo behind
+`CORENT_BACKEND_MODE=supabase`) **remains blocked** until the
+migration has been applied to the dev DB and the repo's
+client-available calls have been exercised against real rows.
 
 ### Related executable contracts (must continue to pass)
 

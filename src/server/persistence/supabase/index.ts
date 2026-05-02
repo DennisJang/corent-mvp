@@ -29,6 +29,17 @@ export {
 } from "./adminReviewRepository";
 
 export {
+  saveIntakeSession,
+  getIntakeSession,
+  listIntakeSessions,
+  appendIntakeMessage,
+  listIntakeMessagesForSession,
+  saveIntakeExtraction,
+  getIntakeExtractionForSession,
+  type RepoResult as IntakeRepoResult,
+} from "./intakeRepository";
+
+export {
   readMarketplaceAggregates,
   type MarketplaceAggregates,
   type DbHealth,
