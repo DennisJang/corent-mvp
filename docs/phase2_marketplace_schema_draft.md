@@ -511,20 +511,30 @@ service's existing try/catch surfaces it via the runner's
   Supabase client. The test also asserts the mock-actor + supabase
   combination never reaches the writer.
 
-### PR 5 prerequisites (PR 5A + 5B landed — actor resolution + manual provisioning workflow)
+### PR 5 prerequisites (PR 5A + 5B + 5C landed — resolver + manual provisioning + user sign-in)
 
 PR 5 is the auth + dispatch-flip slice. PR 5A landed the
 **closed-alpha actor resolution** prerequisite. PR 5B added the
 **manual closed-alpha provisioning workflow** as documentation +
-template (the founder-only path that gives PR 5A's resolver a
-data model to read). The remaining items still gate the dispatch
-flip.
+template. PR 5C added the **closed-alpha CoRent user sign-in
+entry path** (one shared, non-admin Supabase Auth magic-link
+flow). The remaining item — the dispatch flip — is the only one
+still pending.
 
-1. **Seller / renter auth route** — magic-link + callback,
-   mirroring the founder-admin pattern in
-   [`src/server/admin/auth.ts`](../src/server/admin/auth.ts) +
-   [`src/server/admin/supabase-ssr.ts`](../src/server/admin/supabase-ssr.ts).
-   *Tracked as PR 5C.* Not in PR 5A or 5B.
+1. ✅ **Closed-alpha CoRent user sign-in / callback route** —
+   landed in PR 5C. New routes at
+   [`src/app/auth/sign-in/route.ts`](../src/app/auth/sign-in/route.ts)
+   (POST magic-link initiation) and
+   [`src/app/auth/callback/route.ts`](../src/app/auth/callback/route.ts)
+   (GET code-for-session exchange), plus a minimal
+   [`src/app/login/page.tsx`](../src/app/login/page.tsx) entry
+   page. The user route does NOT consult the founder allowlist,
+   uses `shouldCreateUser: false` (no auto-provisioning of
+   `auth.users`), never inserts into `profiles` / `seller_profiles`
+   / `borrower_profiles`, and never lands on `/admin/*` (the
+   `safeUserNextPath` open-redirect helper rejects admin paths
+   alongside the standard scheme/protocol-relative defenses).
+   See [`docs/corent_closed_alpha_user_auth_note.md`](./corent_closed_alpha_user_auth_note.md).
 2. ✅ **Closed-alpha provisioning workflow (manual, founder-only)** —
    landed in PR 5B as documentation. The provisioning path is
    founder-driven: a manual SQL template at
@@ -544,16 +554,18 @@ flip.
    between seller/renter actors via the new `prefer` option that
    `runIntentCommand` forwards. See
    [`docs/corent_closed_alpha_actor_resolver_note.md`](./corent_closed_alpha_actor_resolver_note.md).
-4. **Client adapter flip** — flip `SHARED_SERVER_MODE` in
-   `chatIntakeClient.ts` (or replace it with a runtime probe of
-   the server's mode). *Tracked as PR 5D.* Not in PR 5A or 5B.
+4. **Dispatch flip** — replace `SHARED_SERVER_MODE` in
+   `chatIntakeClient.ts` with a runtime probe (or other
+   founder-controlled gate) so the visible chat intake UI starts
+   talking to the server-backed dispatcher for opted-in
+   sessions. *Tracked as PR 5D.* Not in PR 5A, 5B, or 5C.
 
-Once items 1 and 4 are in place (PR 5C, then PR 5D), PR 4's
-dispatcher seam goes live without further changes to the chat
-intake actions or service — the wiring is already in place and
-PR 5A's resolver fulfills the auth-bound `source: "supabase"`
-actor contract using profile / capability rows seeded via the
-PR 5B workflow.
+Once item 4 is in place, PR 4's dispatcher seam goes live without
+further changes to the chat intake actions or service — the
+wiring is already in place: PR 5A's resolver fulfills the
+auth-bound `source: "supabase"` actor contract, PR 5B seeded the
+profile / capability rows it reads, and PR 5C lets a tester
+actually establish the auth session.
 
 ### Related executable contracts (must continue to pass)
 

@@ -120,8 +120,12 @@ For one closed-alpha tester:
    template. Confirm:
    - one row in `profiles` with the tester's id
    - the expected capability rows present (and only those)
-6. **Hand the tester their sign-in path** (when the auth route
-   ships in PR 5C — not yet).
+6. **Hand the tester their sign-in path**: `/login`. Posts to
+   `/auth/sign-in` (magic-link initiation, no allowlist, no
+   auto-create) and exchanges the code at `/auth/callback`. PR 5C
+   shipped the route; see
+   [`docs/corent_closed_alpha_user_auth_note.md`](corent_closed_alpha_user_auth_note.md)
+   for the full flow.
 
 ## Rollback
 
@@ -153,21 +157,21 @@ this out explicitly.
 
 ## What lands next
 
-PR 5C is the **seller / renter auth entry route or equivalent
-session entry path** — magic-link + callback handlers mirroring
-the founder-admin pattern in
-[`src/server/admin/auth.ts`](../src/server/admin/auth.ts) +
-[`src/server/admin/supabase-ssr.ts`](../src/server/admin/supabase-ssr.ts).
-That is the prerequisite that lets a founder-seeded tester
-actually log in and reach the resolver's supabase branch.
+PR 5C **landed**: a single shared closed-alpha CoRent user
+sign-in / callback route. See
+[`docs/corent_closed_alpha_user_auth_note.md`](corent_closed_alpha_user_auth_note.md)
+for the route layout (`/login` → `/auth/sign-in` → `/auth/callback`),
+the `shouldCreateUser: false` posture, and the assertion that
+the founder allowlist is not consulted on the user surface.
 
-After PR 5C, the dispatch flip (PR 5D — flipping
-`SHARED_SERVER_MODE` or replacing it with a runtime probe) wires
-the resolver's `source: "supabase"` actor through to the chat
-intake supabase writer. Until then, the resolver, the dispatcher,
-and the supabase writer all exist but are unreachable from
-production traffic — exactly the fail-closed posture the
-pre-revenue beta plan requires.
+PR 5D — the **dispatch flip** (replacing `SHARED_SERVER_MODE` in
+`chatIntakeClient.ts` with a runtime probe or other
+founder-controlled gate) — wires the resolver's `source:
+"supabase"` actor through to the chat intake supabase writer.
+Until then, the resolver, the dispatcher, the supabase writer,
+and the user sign-in route all exist but the visible chat intake
+UI continues to use local persistence — exactly the fail-closed
+posture the pre-revenue beta plan requires.
 
 ## References
 

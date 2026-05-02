@@ -96,6 +96,102 @@ describe("SSR auth module boundary", () => {
       expect(src).not.toContain("readSupabaseServerEnv");
     }
   });
+
+  // Slice A PR 5C — closed-alpha CoRent user auth boundary.
+
+  it("user auth route handlers never reference SUPABASE_SERVICE_ROLE_KEY", () => {
+    const targets = [
+      join(SRC_ROOT, "app", "auth", "callback", "route.ts"),
+      join(SRC_ROOT, "app", "auth", "sign-in", "route.ts"),
+    ];
+    for (const file of targets) {
+      const src = readRel(file);
+      expect(src).not.toContain("SUPABASE_SERVICE_ROLE_KEY");
+      expect(src).not.toContain("getServiceRoleClient");
+      expect(src).not.toContain("readSupabaseServerEnv");
+    }
+  });
+
+  it("user auth route handlers never check the founder allowlist", () => {
+    // The founder allowlist is admin-only. The user surface MUST
+    // NOT consult it: capability is row-presence in
+    // `seller_profiles` / `borrower_profiles`, granted manually
+    // per the closed-alpha provisioning workflow. If a future edit
+    // imports `isAllowlistedFounder` here, this test fails loudly.
+    const targets = [
+      join(SRC_ROOT, "app", "auth", "callback", "route.ts"),
+      join(SRC_ROOT, "app", "auth", "sign-in", "route.ts"),
+    ];
+    for (const file of targets) {
+      const src = readRel(file);
+      expect(src).not.toContain("isAllowlistedFounder");
+      expect(src).not.toContain("requireFounderSession");
+      expect(src).not.toContain("FOUNDER_ADMIN_EMAIL_ALLOWLIST");
+      expect(src).not.toContain("getFounderAllowlist");
+    }
+  });
+
+  it("user auth route handlers never auto-create profiles or capability rows", () => {
+    // Closed-alpha posture: provisioning is manual (PR 5B). The
+    // user auth route must never insert / upsert / update / delete
+    // against profiles, seller_profiles, or borrower_profiles. We
+    // also forbid use of the marketplace service-role client from
+    // these routes.
+    const targets = [
+      join(SRC_ROOT, "app", "auth", "callback", "route.ts"),
+      join(SRC_ROOT, "app", "auth", "sign-in", "route.ts"),
+    ];
+    for (const file of targets) {
+      const src = readRel(file);
+      expect(src).not.toContain("getMarketplaceClient");
+      expect(src).not.toContain("@/server/persistence/supabase");
+      expect(src).not.toContain("lookupProfileCapabilities");
+      // No table mutations.
+      expect(src).not.toMatch(/from\(\s*["']profiles["']/);
+      expect(src).not.toMatch(/from\(\s*["']seller_profiles["']/);
+      expect(src).not.toMatch(/from\(\s*["']borrower_profiles["']/);
+      expect(src).not.toMatch(/\.insert\s*\(/);
+      expect(src).not.toMatch(/\.upsert\s*\(/);
+      expect(src).not.toMatch(/\.update\s*\(/);
+      expect(src).not.toMatch(/\.delete\s*\(/);
+    }
+  });
+
+  it("the /login page never imports server-only auth helpers and never auto-creates rows", () => {
+    const file = join(SRC_ROOT, "app", "login", "page.tsx");
+    const src = readRel(file);
+    // The page is a server component but it must not reach for
+    // the SSR auth client, the marketplace client, or the
+    // profile lookup. The route handlers do that.
+    expect(src).not.toContain("@/server/admin/supabase-ssr");
+    expect(src).not.toContain("@/server/persistence/supabase");
+    expect(src).not.toContain("lookupProfileCapabilities");
+    expect(src).not.toContain("getMarketplaceClient");
+    // No table mutations on the page either.
+    expect(src).not.toMatch(/\.insert\s*\(/);
+    expect(src).not.toMatch(/\.upsert\s*\(/);
+  });
+
+  it("the user auth surface posts to /auth/sign-in (single shared CoRent auth path)", () => {
+    // The closed-alpha decision is "one shared CoRent auth entry
+    // route". Confirm /login posts to /auth/sign-in (NOT /admin/...).
+    const file = join(SRC_ROOT, "app", "login", "page.tsx");
+    const src = readRel(file);
+    expect(src).toContain('action="/auth/sign-in"');
+    expect(src).not.toContain('action="/admin/auth/sign-in"');
+  });
+
+  it("PR 5C did not flip the visible chat intake runtime — SHARED_SERVER_MODE stays false", () => {
+    // The closed-alpha decision: PR 5C adds the auth entry path
+    // only. The visible chat intake demo continues to use local
+    // persistence. If a future edit flips this constant, the
+    // chat intake UI starts depending on a server-side path that
+    // PR 5C deliberately did NOT wire up.
+    const file = join(SRC_ROOT, "lib", "client", "chatIntakeClient.ts");
+    const src = readRel(file);
+    expect(src).toContain("const SHARED_SERVER_MODE = false");
+    expect(src).not.toContain("const SHARED_SERVER_MODE = true");
+  });
 });
 
 describe("NEXT_PUBLIC_* deny-list (security review §3.20)", () => {

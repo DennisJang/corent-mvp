@@ -79,3 +79,13 @@ export async function createAdminAuthClient(
     },
   });
 }
+
+// Slice A PR 5C — closed-alpha user auth alias.
+//
+// `createAdminAuthClient` was first introduced for the founder admin
+// magic-link flow. The factory itself is generic: anon key + cookie
+// store, no founder-specific behavior, no allowlist coupling. The
+// closed-alpha user sign-in / callback routes reuse the same
+// implementation under this name so the call sites read clearly. The
+// two identifiers are reference-equal — there is no second client.
+export const createUserAuthClient = createAdminAuthClient;
