@@ -277,20 +277,123 @@ when the SUPABASE_* env vars are missing.
 
 ### Migration apply status
 
-**Still UNVERIFIED in this environment.** The Slice A PR 1
-migration (`20260502120000_phase2_intake_draft.sql`) has not been
-applied to a real Postgres / Supabase project from this machine
-because the canonical environment lacks the `supabase` CLI, `psql`,
-and any container runtime. PR 2's repository code therefore
-conforms to the documented schema by static review only — the
-columns, constraints, triggers, and enum values it expects are
-those declared in the PR 1 migration source, but no live insert /
-read has been exercised against them.
+**Verified locally as of Slice A PR 3.** The three Slice A
+migrations have been applied to a disposable local Supabase stack
+(Supabase CLI 2.95.4 + Docker via OrbStack) via `supabase start` +
+`supabase db reset`. The applied set:
 
-PR 3 wiring (the chat intake service flipping to the repo behind
-`CORENT_BACKEND_MODE=supabase`) **remains blocked** until the
-migration has been applied to the dev DB and the repo's
-client-available calls have been exercised against real rows.
+- `20260430000000_phase1_analytics.sql`
+- `20260430120000_phase2_marketplace_draft.sql`
+- `20260502120000_phase2_intake_draft.sql`
+
+Verified locally against the running stack: the new enums, the
+three intake tables, RLS enabled with no permissive policies, the
+append-only trigger on `listing_intake_messages`. The remote
+`corent-dev` project has NOT been touched; `supabase db push` was
+not run.
+
+---
+
+## Slice A — PR 3: chat intake supabase runtime gate (server-only)
+
+Source files:
+- [`src/server/intake/actions.ts`](../src/server/intake/actions.ts)
+  (extended with `assertSupabaseAuthority` helper)
+- [`src/server/intake/actions.test.ts`](../src/server/intake/actions.test.ts)
+  (extended with explicit forged-authority-field coverage)
+- [`src/server/intake/actions.backendMode.test.ts`](../src/server/intake/actions.backendMode.test.ts)
+  (new file — backend-mode + actor-source branches)
+
+PR 3 introduces the **runtime gate** between the chat intake server
+actions and the Supabase intake repository. It does **not** dispatch
+to the repository in this PR — the dispatch waits for a later PR
+that lands real auth + a Supabase-resolved actor. The gate fails
+closed in two layers; default behavior is unchanged.
+
+### Mode behavior
+
+| `CORENT_BACKEND_MODE` | Resolved actor source | Result |
+| --- | --- | --- |
+| unset / `mock` / unknown | mock | ✅ proceeds — local persistence path via `chatListingIntakeService` (the same path the same-browser demo has always used) |
+| `supabase` | `mock` | ❌ `{ ok: false, code: "unauthenticated", message: "supabase_mode_requires_auth_bound_actor" }` |
+| `supabase` | `supabase` (future state) | ❌ `{ ok: false, code: "internal", message: "supabase_runtime_not_yet_wired" }` |
+
+### Why two-layer fail-closed
+
+- **Mock actor in supabase mode.** Today every production resolver
+  call returns a mock-sourced actor (the body of
+  `resolveServerActor` still reads `getMockSellerSession`). Letting
+  a mock identity authorize a shared-DB write would violate the
+  externalization plan §3 principle "no client-supplied actor /
+  status / amount trust" plus its corollary "mock actor identity
+  must never authorize an external/shared-DB write". The
+  `unauthenticated` code surfaces this clearly.
+- **Supabase-sourced actor in supabase mode.** This is the future
+  state once real auth lands. The dispatch from the gate to the
+  Supabase intake repository is intentionally NOT in this PR —
+  honest fail-closed beats unreachable code that pretends to work.
+  The `internal` code with `supabase_runtime_not_yet_wired` makes
+  the deferral explicit.
+
+### Default user-visible behavior unchanged
+
+- `CORENT_BACKEND_MODE` is unset by default → `getBackendMode()`
+  returns `"mock"`.
+- The `ChatToListingIntakeCard` continues to call the client
+  adapter at `src/lib/client/chatIntakeClient.ts`, which keeps
+  `SHARED_SERVER_MODE = false` and routes writes through the local
+  `chatListingIntakeService` against browser localStorage.
+- The seller dashboard refreshes from the same browser-local
+  persistence and sees those writes immediately.
+
+### What the gate does NOT do
+
+- It does NOT dispatch to the Supabase intake repository in any
+  branch. The repo exists (PR 2) and is callable from server-only
+  code, but no production code path reaches it after PR 3.
+- It does NOT touch the public listing projection, rental
+  lifecycle, handoff records, claim windows, claim reviews, trust
+  events, notification events, admin actions, payment, deposit,
+  refund, or settlement paths.
+- It does NOT change the client adapter or the seller dashboard.
+  No UI or motion change.
+- It does NOT add authenticated RLS policies. The deny-by-default
+  posture from PR 1 is unchanged.
+- It does NOT implement real auth. `resolveServerActor` still reads
+  `getMockSellerSession`; the auth swap is deferred.
+
+### Coverage added
+
+- Existing forged-payload tests now also assert that
+  `status` / `listingIntentId` / `role` / `adminId` / `trustScore`
+  / `sellerOverride` injected via cast are runtime no-ops. The
+  underlying invariant ("payload never carries authority") was
+  already in place; PR 3 just makes the test explicit so a future
+  payload-shape regression fires loudly.
+- New `actions.backendMode.test.ts` covers the mock-mode default,
+  the supabase-mode + mock-actor branch (per action), the
+  supabase-mode + supabase-actor branch (per action, with the
+  resolver mocked to synthesize the future state), and the
+  non-secret-message guarantee on the failure path.
+
+### Future PR (not in PR 3)
+
+A later PR will:
+
+1. Land real auth via Supabase Auth (replace `resolveServerActor`'s
+   body so it returns a `source: "supabase"` actor).
+2. Replace the `supabase_runtime_not_yet_wired` branch with the
+   actual dispatch to `intakeRepository`.
+3. Flip `SHARED_SERVER_MODE` in the client adapter (or replace the
+   constant with a runtime probe of the server's mode) so a
+   production-mode browser routes writes to the server actions.
+
+Until those land, **`CORENT_BACKEND_MODE=supabase` is intentionally
+inert from a chat-intake user-flow perspective** — the operator can
+set it without breaking the same-browser demo, and any caller that
+reaches the server actions in supabase mode receives a typed
+fail-closed response instead of a write that would silently land
+in the wrong persistence layer.
 
 ### Related executable contracts (must continue to pass)
 

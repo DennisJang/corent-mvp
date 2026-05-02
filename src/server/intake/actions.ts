@@ -31,6 +31,8 @@ import {
   ChatIntakeInputError,
   chatListingIntakeService,
 } from "@/lib/services/chatListingIntakeService";
+import type { ServerActor } from "@/server/actors/resolveServerActor";
+import { getBackendMode } from "@/server/backend/mode";
 import { runIntentCommand } from "@/server/intents/intentCommand";
 import {
   intentErr,
@@ -78,6 +80,54 @@ export type CreateIntakeListingDraftResult = {
 };
 
 // --------------------------------------------------------------
+// Backend-mode safety gate.
+//
+// In `mock` mode (the default and the only mode the local
+// same-browser demo runs in) this is a pass-through — it returns
+// `null` and the action proceeds against the local persistence
+// adapter pair via `chatListingIntakeService`.
+//
+// In `supabase` mode it FAILS CLOSED in two layers:
+//
+//   1. If the resolved actor's `source` is `"mock"`, the action
+//      refuses with `unauthenticated`. Mock identities cannot back
+//      a shared-server write — that is the executable form of the
+//      externalization plan §3 principle "no client-supplied
+//      actor / status / amount trust" plus its corollary
+//      "mock actor identity must never authorize an external/
+//      shared-DB write". Today every real production resolver
+//      returns a mock actor (the `resolveServerActor` body still
+//      reads `getMockSellerSession`), so this branch is always
+//      taken when an operator explicitly sets
+//      `CORENT_BACKEND_MODE=supabase`.
+//
+//   2. If the actor's `source` is `"supabase"` (an auth-bound
+//      actor from a future PR that lands real auth), the action
+//      still refuses — with `internal: supabase_runtime_not_yet_wired`.
+//      Slice A PR 3 only puts the gate up; the dispatch from the
+//      gate to the Supabase intake repository ships in a later PR
+//      after real auth + a Supabase-resolved actor exist.
+//
+// Net effect of PR 3:
+//   - Default behavior unchanged for every same-browser demo user.
+//   - Any operator that sets `CORENT_BACKEND_MODE=supabase` sees
+//     every intake server action fail closed with a typed,
+//     non-secret error code.
+//
+// Returns `null` when the action should proceed; otherwise an
+// `IntentResult<T>` failure that the action returns directly.
+function assertSupabaseAuthority<T>(actor: ServerActor): IntentResult<T> | null {
+  if (getBackendMode() !== "supabase") return null;
+  if (actor.source !== "supabase") {
+    return intentErr<T>(
+      "unauthenticated",
+      "supabase_mode_requires_auth_bound_actor",
+    );
+  }
+  return intentErr<T>("internal", "supabase_runtime_not_yet_wired");
+}
+
+// --------------------------------------------------------------
 // Error mapping helper — translates the chat intake domain errors
 // into typed `IntentResult` codes. Stack traces and internal
 // messages never reach the client.
@@ -121,6 +171,8 @@ export async function startIntakeSessionAction(): Promise<
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can start intake");
       }
+      const gated = assertSupabaseAuthority<StartIntakeSessionResult>(actor);
+      if (gated) return gated;
       try {
         const session = await chatListingIntakeService.startSession(
           actor.sellerId,
@@ -157,6 +209,10 @@ export async function appendIntakeSellerMessageAction(
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can append intake");
       }
+      const gated = assertSupabaseAuthority<AppendIntakeSellerMessageResult>(
+        actor,
+      );
+      if (gated) return gated;
       if (
         typeof payload.sessionId !== "string" ||
         payload.sessionId.length === 0
@@ -204,6 +260,10 @@ export async function createIntakeListingDraftAction(
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can create drafts");
       }
+      const gated = assertSupabaseAuthority<CreateIntakeListingDraftResult>(
+        actor,
+      );
+      if (gated) return gated;
       if (
         typeof payload.sessionId !== "string" ||
         payload.sessionId.length === 0

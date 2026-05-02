@@ -94,6 +94,66 @@ describe("appendIntakeSellerMessageAction", () => {
     expect(stored?.sellerId).toBe(CURRENT_SELLER.id);
   });
 
+  it("ignores forged authority fields (status, listingIntentId, role, admin) on the append payload", async () => {
+    const sessionId = await start();
+    // Every field below is one a future client might try to forge to
+    // bypass the actor-resolution + status-machine boundaries. None
+    // of them appear on the typed payload; the runtime reads only
+    // `sessionId` and `content` from `payload`.
+    const forged = {
+      sessionId,
+      content: REPRESENTATIVE_INPUT,
+      status: "draft_created",
+      listingIntentId: "li_attacker",
+      role: "admin",
+      adminId: "admin_attacker",
+      trustScore: 9999,
+      sellerOverride: "stranger_x",
+    } as unknown as AppendIntakeSellerMessagePayload;
+    const result = await appendIntakeSellerMessageAction(forged);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // Session stays in `drafting` (not the forged `draft_created`).
+    expect(result.value.session.status).toBe("drafting");
+    // listingIntentId stays absent — there is no attacker-controlled
+    // pointer.
+    expect(result.value.session.listingIntentId).toBeUndefined();
+    // Seller stays the resolved mock actor.
+    expect(result.value.session.sellerId).toBe(CURRENT_SELLER.id);
+    // The persisted row mirrors the in-memory result.
+    const stored = await getPersistence().getIntakeSession(sessionId);
+    expect(stored?.status).toBe("drafting");
+    expect(stored?.listingIntentId).toBeUndefined();
+    expect(stored?.sellerId).toBe(CURRENT_SELLER.id);
+  });
+
+  it("ignores forged authority fields (status, listingIntentId, role) on the create-draft payload", async () => {
+    const sessionId = await start();
+    await appendIntakeSellerMessageAction({
+      sessionId,
+      content: REPRESENTATIVE_INPUT,
+    });
+    const forged = {
+      sessionId,
+      status: "approved",
+      listingIntentId: "li_attacker",
+      role: "admin",
+      sellerOverride: "stranger_x",
+    } as unknown as CreateIntakeListingDraftPayload;
+    const result = await createIntakeListingDraftAction(forged);
+    expect(result.ok).toBe(true);
+    if (!result.ok) return;
+    // The created listing is `draft` — never the forged `approved`.
+    expect(result.value.listing.status).toBe("draft");
+    expect(result.value.listing.status).not.toBe("approved");
+    // Listing ownership is the resolved mock actor's seller id.
+    expect(result.value.listing.sellerId).toBe(CURRENT_SELLER.id);
+    // The session's listingIntentId points at the freshly-created
+    // listing, not the attacker-supplied id.
+    expect(result.value.session.listingIntentId).toBe(result.value.listing.id);
+    expect(result.value.session.listingIntentId).not.toBe("li_attacker");
+  });
+
   it("maps message_empty / message_too_long to input", async () => {
     const sessionId = await start();
     const empty = await appendIntakeSellerMessageAction({
