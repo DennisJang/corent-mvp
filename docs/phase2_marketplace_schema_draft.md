@@ -395,6 +395,146 @@ reaches the server actions in supabase mode receives a typed
 fail-closed response instead of a write that would silently land
 in the wrong persistence layer.
 
+---
+
+## Slice A — PR 4: intake writer + dispatcher seam
+
+Source files:
+- [`src/lib/intake/intakeWriter.ts`](../src/lib/intake/intakeWriter.ts)
+  (NEW — interface + `localIntakeWriter`, browser-safe)
+- [`src/server/intake/supabaseIntakeWriter.ts`](../src/server/intake/supabaseIntakeWriter.ts)
+  (NEW — adapts the Supabase intake repository to the writer
+  interface, server-only)
+- [`src/server/intake/intakeWriterDispatcher.ts`](../src/server/intake/intakeWriterDispatcher.ts)
+  (NEW — `getIntakeWriter(actor)` decision function, server-only)
+- [`src/server/intake/intakeWriterDispatcher.test.ts`](../src/server/intake/intakeWriterDispatcher.test.ts)
+  (NEW — pure unit tests for the dispatcher)
+- [`src/lib/services/chatListingIntakeService.ts`](../src/lib/services/chatListingIntakeService.ts)
+  (refactored to a `createChatListingIntakeService(writer)`
+  factory; `chatListingIntakeService` const is the
+  `localIntakeWriter`-backed default — every existing caller is
+  unchanged)
+- [`src/server/intake/actions.ts`](../src/server/intake/actions.ts)
+  (uses the dispatcher; the PR 3 `supabase_runtime_not_yet_wired`
+  fail-closed branch is replaced with real dispatch to the supabase
+  writer when both mode and actor source are `supabase`; the
+  mock-actor + supabase-mode branch still fails closed with
+  `unauthenticated`)
+- [`src/server/intake/actions.backendMode.test.ts`](../src/server/intake/actions.backendMode.test.ts)
+  (supabase + supabase-actor tests now verify dispatch to a
+  module-mocked `supabaseIntakeWriter` rather than the PR 3
+  `not_yet_wired` failure)
+
+PR 4 introduces the dispatcher seam **without unlocking any
+shared-DB writes**. Default same-browser demo behavior is
+byte-identical to pre-PR-4 because `localIntakeWriter` is a thin
+pass-through to `getPersistence()`. Production cannot reach the
+supabase branch today: `resolveServerActor`'s body still wraps
+`getMockSellerSession()` and always returns `source: "mock"`.
+
+### Decision table (current production behavior)
+
+| `CORENT_BACKEND_MODE` | actor.source | Dispatcher returns | Action result |
+| --- | --- | --- | --- |
+| unset / `mock` / unknown / production | mock | `localIntakeWriter` | proceeds — writes to local persistence (browser localStorage / SSR memory) |
+| `supabase` (dev only) | mock | `null` | `{ ok: false, code: "unauthenticated", message: "supabase_mode_requires_auth_bound_actor" }` |
+| `supabase` (dev only) | supabase (test-mocked only) | `supabaseIntakeWriter` | dispatch to repository — unreachable from production until PR 5 lands real auth |
+
+### What the writer covers
+
+The `IntakeWriter` interface mirrors the seven chat intake methods
+on the persistence adapter: `saveIntakeSession`, `getIntakeSession`,
+`listIntakeSessions`, `appendIntakeMessage`,
+`listIntakeMessagesForSession`, `saveIntakeExtraction`,
+`getIntakeExtractionForSession`. Saves return `Promise<void>`;
+the supabase writer adapts the repository's `RepoResult` shape by
+throwing `IntakeRepoWriteError` on failure so the chat intake
+service's existing try/catch surfaces it via the runner's
+`internal` mapping.
+
+### What the writer does NOT cover
+
+- **Listing-side persistence inside `createListingDraftFromIntake`.**
+  The service still calls `getPersistence().getListingIntent(...)`
+  and `listingService.saveDraft(...)` directly. In the
+  unreachable-today supabase + supabase branch, that means the
+  intake row goes to Supabase but the listing draft itself goes to
+  local persistence. Documented as a known limitation; extending
+  the writer to listings is a future slice (most likely combined
+  with the `public_listing_publications` boundary).
+- **Trust events, claim windows, rental events, notification
+  events, admin actions.** None of those are touched by chat
+  intake; they remain on `getPersistence()` until each domain ships
+  its own writer + dispatcher.
+
+### What PR 4 explicitly does NOT do
+
+- Does NOT implement seller / renter auth.
+- Does NOT add a seller / renter sign-in route.
+- Does NOT touch `profiles`, `seller_profiles`, or
+  `borrower_profiles` (no reads, no writes).
+- Does NOT change `resolveServerActor`'s body — it still wraps
+  `getMockSellerSession()`. No production code path produces an
+  actor with `source: "supabase"`.
+- Does NOT flip `SHARED_SERVER_MODE` in
+  [`src/lib/client/chatIntakeClient.ts`](../src/lib/client/chatIntakeClient.ts) — browser writes still go through the local
+  service path. The chat-to-listing card on the seller dashboard
+  is unchanged.
+- Does NOT add authenticated RLS policies. The deny-by-default
+  posture from PR 1 stays.
+- Does NOT add schema migrations.
+- Does NOT touch the remote `corent-dev` Supabase project. No
+  `supabase login`, `supabase link`, `supabase db push`, no
+  `--db-url` flag. Local migration apply against the disposable
+  Supabase + OrbStack stack remains the verification path.
+
+### Tests (PR 4 totals: 596 / 41 files)
+
+- **Existing chat intake service tests** keep passing unchanged
+  because the default const `chatListingIntakeService` still
+  exists with byte-identical behavior (it's
+  `createChatListingIntakeService()` with the default writer).
+- **Existing forged-payload tests** in
+  [`actions.test.ts`](../src/server/intake/actions.test.ts) keep
+  passing — the action's payload validation is upstream of the
+  dispatcher.
+- **New dispatcher unit tests** ([dispatcher.test.ts](../src/server/intake/intakeWriterDispatcher.test.ts))
+  cover every cell of the decision table without touching
+  persistence: mock mode → local; supabase + mock → null;
+  supabase + supabase → supabase writer; identity invariants
+  (`localIntakeWriter !== supabaseIntakeWriter`); dispatcher
+  ignores forged actor fields beyond `kind` / `source`.
+- **Updated supabase-actor tests** in
+  [`actions.backendMode.test.ts`](../src/server/intake/actions.backendMode.test.ts)
+  mock the supabase writer module so the test verifies dispatch
+  reached it (not the local path), without standing up a real
+  Supabase client. The test also asserts the mock-actor + supabase
+  combination never reaches the writer.
+
+### PR 5 prerequisites (unchanged from PR 3 doc)
+
+PR 5 is the auth + dispatch-flip slice. It must land all four:
+
+1. **Seller / renter auth route** — magic-link + callback,
+   mirroring the founder-admin pattern in
+   [`src/server/admin/auth.ts`](../src/server/admin/auth.ts) +
+   [`src/server/admin/supabase-ssr.ts`](../src/server/admin/supabase-ssr.ts).
+2. **`seller_profiles` registration flow** — first-login auto-create
+   or explicit opt-in. Founder approval required on the
+   registration UX.
+3. **`auth.uid → seller_profiles.profile_id` resolver** — a helper
+   that reads the user's profile row and returns the seller id the
+   downstream services already understand.
+4. **Resolver body swap + client adapter flip** — replace
+   `resolveServerActor`'s body so `source: "supabase"` is
+   reachable, and either flip `SHARED_SERVER_MODE` in
+   `chatIntakeClient.ts` or replace it with a runtime probe of the
+   server's mode.
+
+Once those four are in place, PR 4's dispatcher seam goes live
+without further changes to the chat intake actions or service —
+the wiring is already in place.
+
 ### Related executable contracts (must continue to pass)
 
 - Persistence snapshot parity contract —

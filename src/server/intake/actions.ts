@@ -29,10 +29,9 @@ import type { ListingIntent } from "@/domain/intents";
 import { OwnershipError } from "@/lib/auth/guards";
 import {
   ChatIntakeInputError,
-  chatListingIntakeService,
+  createChatListingIntakeService,
 } from "@/lib/services/chatListingIntakeService";
-import type { ServerActor } from "@/server/actors/resolveServerActor";
-import { getBackendMode } from "@/server/backend/mode";
+import { getIntakeWriter } from "@/server/intake/intakeWriterDispatcher";
 import { runIntentCommand } from "@/server/intents/intentCommand";
 import {
   intentErr,
@@ -80,51 +79,36 @@ export type CreateIntakeListingDraftResult = {
 };
 
 // --------------------------------------------------------------
-// Backend-mode safety gate.
+// Backend-mode safety + writer-dispatch seam.
 //
-// In `mock` mode (the default and the only mode the local
-// same-browser demo runs in) this is a pass-through — it returns
-// `null` and the action proceeds against the local persistence
-// adapter pair via `chatListingIntakeService`.
+// PR 4 replaces the PR 3 two-layer fail-closed helper with a
+// single dispatcher call. `getIntakeWriter(actor)` returns:
 //
-// In `supabase` mode it FAILS CLOSED in two layers:
+//   - `localIntakeWriter` — in mock / default mode, regardless of
+//     actor source. Wraps `getPersistence()`; behavior is identical
+//     to pre-PR-4. The same-browser demo runs through this path.
 //
-//   1. If the resolved actor's `source` is `"mock"`, the action
-//      refuses with `unauthenticated`. Mock identities cannot back
-//      a shared-server write — that is the executable form of the
-//      externalization plan §3 principle "no client-supplied
-//      actor / status / amount trust" plus its corollary
-//      "mock actor identity must never authorize an external/
-//      shared-DB write". Today every real production resolver
-//      returns a mock actor (the `resolveServerActor` body still
-//      reads `getMockSellerSession`), so this branch is always
-//      taken when an operator explicitly sets
-//      `CORENT_BACKEND_MODE=supabase`.
+//   - `null` — in supabase mode + mock-sourced actor. Mock identity
+//     must never back a shared-DB write. Actions map `null` to the
+//     same `unauthenticated` typed result PR 3 returned, preserving
+//     the user-visible failure shape.
 //
-//   2. If the actor's `source` is `"supabase"` (an auth-bound
-//      actor from a future PR that lands real auth), the action
-//      still refuses — with `internal: supabase_runtime_not_yet_wired`.
-//      Slice A PR 3 only puts the gate up; the dispatch from the
-//      gate to the Supabase intake repository ships in a later PR
-//      after real auth + a Supabase-resolved actor exist.
+//   - `supabaseIntakeWriter` — in supabase mode + supabase-sourced
+//     actor. Today this branch is unreachable from production
+//     because `resolveServerActor` always returns a mock-sourced
+//     actor; the resolver body swap is the prerequisite tracked
+//     for PR 5.
 //
-// Net effect of PR 3:
-//   - Default behavior unchanged for every same-browser demo user.
-//   - Any operator that sets `CORENT_BACKEND_MODE=supabase` sees
-//     every intake server action fail closed with a typed,
-//     non-secret error code.
-//
-// Returns `null` when the action should proceed; otherwise an
-// `IntentResult<T>` failure that the action returns directly.
-function assertSupabaseAuthority<T>(actor: ServerActor): IntentResult<T> | null {
-  if (getBackendMode() !== "supabase") return null;
-  if (actor.source !== "supabase") {
-    return intentErr<T>(
-      "unauthenticated",
-      "supabase_mode_requires_auth_bound_actor",
-    );
-  }
-  return intentErr<T>("internal", "supabase_runtime_not_yet_wired");
+// The action helper below maps the `null` case to a typed
+// `unauthenticated` result. Throwing dispatch errors (write
+// failures from the supabase writer) propagate to the runner's
+// internal-throws-become-`internal` mapping; the runner does not
+// leak stack traces to the client.
+function intakeUnauthenticated<T>(): IntentResult<T> {
+  return intentErr<T>(
+    "unauthenticated",
+    "supabase_mode_requires_auth_bound_actor",
+  );
 }
 
 // --------------------------------------------------------------
@@ -171,12 +155,11 @@ export async function startIntakeSessionAction(): Promise<
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can start intake");
       }
-      const gated = assertSupabaseAuthority<StartIntakeSessionResult>(actor);
-      if (gated) return gated;
+      const writer = getIntakeWriter(actor);
+      if (!writer) return intakeUnauthenticated<StartIntakeSessionResult>();
       try {
-        const session = await chatListingIntakeService.startSession(
-          actor.sellerId,
-        );
+        const service = createChatListingIntakeService(writer);
+        const session = await service.startSession(actor.sellerId);
         return intentOk({ session });
       } catch (err) {
         return (
@@ -209,10 +192,10 @@ export async function appendIntakeSellerMessageAction(
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can append intake");
       }
-      const gated = assertSupabaseAuthority<AppendIntakeSellerMessageResult>(
-        actor,
-      );
-      if (gated) return gated;
+      const writer = getIntakeWriter(actor);
+      if (!writer) {
+        return intakeUnauthenticated<AppendIntakeSellerMessageResult>();
+      }
       if (
         typeof payload.sessionId !== "string" ||
         payload.sessionId.length === 0
@@ -223,7 +206,8 @@ export async function appendIntakeSellerMessageAction(
         return intentErr("input", "content required");
       }
       try {
-        const result = await chatListingIntakeService.appendSellerMessage(
+        const service = createChatListingIntakeService(writer);
+        const result = await service.appendSellerMessage(
           payload.sessionId,
           actor.sellerId,
           payload.content,
@@ -260,10 +244,10 @@ export async function createIntakeListingDraftAction(
       if (actor.kind !== "seller") {
         return intentErr("ownership", "only sellers can create drafts");
       }
-      const gated = assertSupabaseAuthority<CreateIntakeListingDraftResult>(
-        actor,
-      );
-      if (gated) return gated;
+      const writer = getIntakeWriter(actor);
+      if (!writer) {
+        return intakeUnauthenticated<CreateIntakeListingDraftResult>();
+      }
       if (
         typeof payload.sessionId !== "string" ||
         payload.sessionId.length === 0
@@ -271,11 +255,11 @@ export async function createIntakeListingDraftAction(
         return intentErr("input", "sessionId required");
       }
       try {
-        const result =
-          await chatListingIntakeService.createListingDraftFromIntake(
-            payload.sessionId,
-            actor.sellerId,
-          );
+        const service = createChatListingIntakeService(writer);
+        const result = await service.createListingDraftFromIntake(
+          payload.sessionId,
+          actor.sellerId,
+        );
         return intentOk(result);
       } catch (err) {
         return (
