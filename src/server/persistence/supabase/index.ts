@@ -8,6 +8,7 @@
 export {
   getListingById,
   listApprovedListings,
+  listListingsBySeller,
   saveListing,
   countListingsByStatus,
 } from "./listingRepository";

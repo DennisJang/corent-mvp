@@ -224,6 +224,63 @@ export async function listApprovedListings(
   });
 }
 
+// Lists every listing owned by a single seller — including drafts,
+// in-flight statuses, and rejected rows — for the seller's own
+// dashboard. The Phase 2 schema's deny-by-default RLS is bypassed by
+// the service-role client; the action layer is the authorization
+// gate (it filters by `actor.sellerId`, never a client-supplied id).
+//
+// Hard rules:
+//   - Validates the seller id as a uuid; returns `[]` on a malformed
+//     value or when the marketplace client is unavailable.
+//   - No `status` filter — the seller dashboard must see drafts,
+//     human_review_pending, etc. Public projection still goes
+//     through `publicListingService` and continues to require
+//     `'approved'`; this read is not a public surface.
+//   - Joins `listing_verifications` like the other reads. Does NOT
+//     join `listing_secrets`; `privateSerialNumber` stays
+//     `undefined` in the mapper output.
+//   - Bounded by `limit` to keep the query cheap.
+export async function listListingsBySeller(
+  sellerId: string,
+  limit = 100,
+): Promise<ListingIntent[]> {
+  const idRes = validateUuid(sellerId);
+  if (!idRes.ok) return [];
+  const client = getMarketplaceClient();
+  if (!client) return [];
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+
+  const { data, error } = await client
+    .from("listings")
+    .select(
+      `
+      id, seller_id, status, raw_seller_input, item_name, category,
+      estimated_value, condition, components, defects, pickup_area,
+      region_coarse, price_one_day, price_three_days, price_seven_days,
+      seller_adjusted_pricing, created_at, updated_at,
+      listing_verifications (
+        id, listing_id, status, safety_code, front_photo, back_photo,
+        components_photo, working_proof, safety_code_photo,
+        private_serial_stored, ai_notes, human_review_notes
+      )
+      `,
+    )
+    .eq("seller_id", idRes.value)
+    .order("updated_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error || !data) return [];
+
+  return data.map((row) => {
+    const lvJoin = (row as { listing_verifications: VerificationRow[] | VerificationRow | null }).listing_verifications;
+    const verification: VerificationRow | null = Array.isArray(lvJoin)
+      ? lvJoin[0] ?? null
+      : lvJoin ?? null;
+    return mapRowToIntent(row as unknown as ListingRow, verification);
+  });
+}
+
 // Upserts a listing from a domain `ListingIntent`. Validates EVERY
 // field the adapter writes — id, seller_id, status, prices, item name,
 // category, components are all server-checked. Verification row is

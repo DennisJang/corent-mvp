@@ -8,6 +8,7 @@ import {
   countListingsByStatus,
   getListingById,
   listApprovedListings,
+  listListingsBySeller,
   saveListing,
 } from "./listingRepository";
 import { _resetMarketplaceClientForTests } from "./client";
@@ -163,6 +164,13 @@ describe("listing repository — client unavailable (default safe path)", () => 
     expect(await listApprovedListings()).toEqual([]);
   });
 
+  it("returns [] for listListingsBySeller when client is null", async () => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+    expect(
+      await listListingsBySeller("22222222-2222-4333-8444-555555555555"),
+    ).toEqual([]);
+  });
+
   it("returns {} for countListingsByStatus when client is null", async () => {
     vi.mocked(getMarketplaceClient).mockReturnValue(null);
     expect(await countListingsByStatus()).toEqual({});
@@ -174,6 +182,184 @@ describe("listing repository — client unavailable (default safe path)", () => 
     expect(r.ok).toBe(false);
     if (r.ok) return;
     expect(r.error).toMatch(/unavailable/);
+  });
+});
+
+describe("listListingsBySeller — input validation", () => {
+  it("returns [] for malformed seller id even if client would otherwise be available", async () => {
+    // Even when a client is mocked, the validator must reject the
+    // seller id BEFORE reaching the DB — a `li_abc` id should never
+    // hit `eq("seller_id", ...)`.
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listListingsBySeller("not-a-uuid")).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
+  it("returns [] for empty / non-string seller id", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listListingsBySeller("")).toEqual([]);
+    expect(
+      await listListingsBySeller(undefined as unknown as string),
+    ).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+});
+
+describe("listListingsBySeller — happy path with mocked client", () => {
+  const SELLER = "22222222-2222-4333-8444-555555555555";
+  const OTHER_SELLER = "33333333-2222-4333-8444-666666666666";
+
+  function listingsRowFixture(overrides: Partial<{
+    id: string;
+    seller_id: string;
+    status: string;
+    item_name: string;
+  }> = {}) {
+    return {
+      id: "44444444-2222-4333-8444-777777777777",
+      seller_id: SELLER,
+      status: "draft",
+      raw_seller_input: "DEMO 셀러 원본 메모",
+      item_name: "테스트 마사지건",
+      category: "massage_gun",
+      estimated_value: 200000,
+      condition: "lightly_used",
+      components: ["본체"],
+      defects: null,
+      pickup_area: "마포구",
+      region_coarse: "unknown",
+      price_one_day: 8000,
+      price_three_days: 21000,
+      price_seven_days: 39000,
+      seller_adjusted_pricing: false,
+      created_at: "2026-04-29T00:00:00.000Z",
+      updated_at: "2026-04-29T00:00:00.000Z",
+      listing_verifications: {
+        id: "55555555-2222-4333-8444-888888888888",
+        listing_id: "44444444-2222-4333-8444-777777777777",
+        status: "pending",
+        safety_code: "B-123",
+        front_photo: false,
+        back_photo: false,
+        components_photo: false,
+        working_proof: false,
+        safety_code_photo: false,
+        private_serial_stored: false,
+        ai_notes: [],
+        human_review_notes: [],
+      },
+      ...overrides,
+    };
+  }
+
+  it("returns seller-owned drafts (and excludes other sellers via the eq filter)", async () => {
+    const captured: Capture[] = [];
+    // The fake client doesn't actually filter by `eq` — it returns
+    // whatever the responder hands back. We stage a payload that
+    // contains only this seller's rows (mirroring what a real
+    // service-role read with `seller_id=$1` would return). The
+    // assertion is that the call chain set the right filter.
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [
+            listingsRowFixture({
+              id: "44444444-2222-4333-8444-777777777777",
+              status: "draft",
+            }),
+            listingsRowFixture({
+              id: "44444444-2222-4333-8444-aaaaaaaaaaaa",
+              status: "human_review_pending",
+            }),
+          ],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listListingsBySeller(SELLER);
+    expect(rows.length).toBe(2);
+    expect(rows.map((r) => r.status).sort()).toEqual(
+      ["draft", "human_review_pending"].sort(),
+    );
+    // The query was filtered by seller_id, never by status.
+    const eqCalls = captured.filter((c) => c.method === "eq");
+    expect(eqCalls.some((c) => c.args[0] === "seller_id" && c.args[1] === SELLER)).toBe(true);
+    expect(eqCalls.some((c) => c.args[0] === "status")).toBe(false);
+    // Ordered by updated_at desc.
+    const orderCalls = captured.filter((c) => c.method === "order");
+    expect(
+      orderCalls.some((c) => c.args[0] === "updated_at"),
+    ).toBe(true);
+  });
+
+  it("does not return other sellers' rows when the responder hands them back filtered by seller_id", async () => {
+    // Defense-in-depth: even if a misconfigured DB returned a
+    // foreign row (it won't — the `eq` filter is in the query),
+    // the action layer's authorization gate is what matters. This
+    // test asserts the repo passes the seller_id filter through
+    // to the client.
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [listingsRowFixture({ seller_id: SELLER })],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listListingsBySeller(SELLER);
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.sellerId).toBe(SELLER);
+    expect(rows[0]?.sellerId).not.toBe(OTHER_SELLER);
+  });
+
+  it("does not join listing_secrets and leaves privateSerialNumber undefined", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [listingsRowFixture()],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listListingsBySeller(SELLER);
+    expect(rows.length).toBe(1);
+    expect(rows[0]?.item.privateSerialNumber).toBeUndefined();
+    // The select clause never names listing_secrets.
+    const selectCall = captured.find((c) => c.method === "select");
+    expect(selectCall).toBeTruthy();
+    expect(JSON.stringify(selectCall?.args)).not.toMatch(/listing_secrets/);
+  });
+
+  it("returns [] when the underlying read errors", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({ data: null, error: { message: "boom" } }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    expect(await listListingsBySeller(SELLER)).toEqual([]);
   });
 });
 

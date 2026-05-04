@@ -17,6 +17,11 @@ import { IntentStatusBadge, statusLabel } from "@/components/intent/IntentStatus
 import type { ListingIntent, RentalIntent } from "@/domain/intents";
 import { isFailureStatus } from "@/domain/intents";
 import {
+  loadSellerOwnedListings,
+  type SellerDashboardListing,
+  type SellerOwnedListingsLoadResult,
+} from "@/lib/client/sellerDashboardListingsClient";
+import {
   EMPTY_USER_TRUST_SUMMARY,
   hasVisibleTrustHistory,
   type ClaimWindow,
@@ -96,14 +101,21 @@ export function SellerDashboard() {
   const [toast, setToast] = useState<string | null>(null);
   // PR 5F — observable chat-intake mode signal. The chat card
   // probes the server-side mode at mount and reports the result
-  // back here so the dashboard can render a transparency
-  // disclaimer above the listings table when the chat path has
-  // moved server-side. The listings table itself is still local;
-  // its externalization is a later slice. Default `local` keeps
-  // the existing disclaimer-free layout.
+  // back here. PR 5G uses this signal to decide whether the
+  // listings table reads from the local persistence (existing
+  // demo behavior) or from the server-mode action that returns
+  // the seller's own server-backed listings.
   const [chatIntakeMode, setChatIntakeMode] = useState<"local" | "server">(
     "local",
   );
+  // PR 5G — server-mode listings state. `null` = not yet loaded
+  // (or local mode). The load result drives the listings table:
+  //   - `kind: "server"` → render `listings` array; hide LISTED_ITEMS.
+  //   - `kind: "error"`  → render failure caption; render NO rows.
+  //   - `kind: "local"`  → adapter signaled local; component falls
+  //     back to the local listings array (existing behavior).
+  const [serverListingsState, setServerListingsState] =
+    useState<SellerOwnedListingsLoadResult | null>(null);
 
   // Mock-only session. Real per-user authentication is documented in
   // docs/mvp_security_guardrails.md §1; this constant is the migration
@@ -115,6 +127,18 @@ export function SellerDashboard() {
     const l = await listingService.list();
     setRentals(r);
     setListings(l);
+    // PR 5G — server-mode listings are loaded only when the chat
+    // intake mode probe has reported `server`. The action self-
+    // gates server-side and returns `local` if the env or actor
+    // disagrees, but skipping the call entirely in client-side
+    // local mode avoids an unnecessary server round-trip on every
+    // refresh of the local demo.
+    if (chatIntakeMode === "server") {
+      const next = await loadSellerOwnedListings();
+      setServerListingsState(next);
+    } else {
+      setServerListingsState(null);
+    }
     // Load handoff records for every handoff-eligible rental owned by
     // this seller. The Map is keyed by `${rentalIntentId}:${phase}` so
     // surface code can look up O(1) per row.
@@ -163,6 +187,32 @@ export function SellerDashboard() {
     refresh().finally(() => setLoaded(true));
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
+
+  // PR 5G — react to a post-mount mode flip. The chat intake card
+  // probes the server-side mode after mount; when the probe
+  // resolves to `server`, this effect loads the seller's
+  // server-backed listings exactly once. Falling back to `local`
+  // (probe failure or explicit `mode: "local"`) clears the
+  // server-listings state so the existing local-mode render path
+  // takes over.
+  useEffect(() => {
+    let cancelled = false;
+    if (chatIntakeMode !== "server") {
+      // Reset to null so a flip back to local mode immediately
+      // takes the existing local-render branch. Same effect-
+      // setState shape as the mount effect above.
+      // eslint-disable-next-line react-hooks/set-state-in-effect
+      setServerListingsState(null);
+      return;
+    }
+    void loadSellerOwnedListings().then((next) => {
+      if (cancelled) return;
+      setServerListingsState(next);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [chatIntakeMode]);
 
   // Filter to the current seller's rentals only. Without this, a borrower
   // who created a request for another seller's product would show up on
@@ -628,76 +678,11 @@ export function SellerDashboard() {
 
       <section>
         <div className="container-dashboard py-16">
-          <div className="flex items-baseline justify-between border-b border-black pb-4 mb-6">
-            <h3 className="text-title">등록된 물건</h3>
-            <span className="text-caption text-[color:var(--ink-60)]">
-              {LISTED_ITEMS.length + listings.length} items
-            </span>
-          </div>
-          {chatIntakeMode === "server" ? (
-            <p
-              role="status"
-              className="text-small border border-dashed border-[color:var(--line-dashed)] px-3 py-2 mb-6"
-            >
-              이 화면의 리스팅 목록은 아직 로컬 데모예요. 서버에 저장한 초안은 다음
-              단계에서 보여 드려요.
-            </p>
-          ) : null}
-          <div className="overflow-x-auto">
-            <table className="w-full text-left">
-              <thead>
-                <tr className="text-caption text-[color:var(--ink-60)]">
-                  <th className="py-3 pr-6 font-medium">물건</th>
-                  <th className="py-3 pr-6 font-medium">상태</th>
-                  <th className="py-3 pr-6 font-medium text-right">조회</th>
-                  <th className="py-3 pl-6 font-medium text-right">
-                    이번 달 대여
-                  </th>
-                </tr>
-              </thead>
-              <tbody>
-                {listings.map((l) => (
-                  <tr
-                    key={l.id}
-                    className="border-t border-[color:var(--ink-12)]"
-                  >
-                    <td className="py-5 pr-6 text-body">{l.item.name}</td>
-                    <td className="py-5 pr-6">
-                      <ListingStatusBadge status={l.status} />
-                    </td>
-                    <td className="py-5 pr-6 text-body text-right tabular-nums">
-                      —
-                    </td>
-                    <td className="py-5 pl-6 text-body text-right tabular-nums">
-                      —
-                    </td>
-                  </tr>
-                ))}
-                {LISTED_ITEMS.map((item) => (
-                  <tr
-                    key={item.id}
-                    className="border-t border-[color:var(--ink-12)]"
-                  >
-                    <td className="py-5 pr-6 text-body">{item.productName}</td>
-                    <td className="py-5 pr-6">
-                      <ListedStatusBadge status={item.status} />
-                    </td>
-                    <td className="py-5 pr-6 text-body text-right tabular-nums">
-                      {item.views}
-                    </td>
-                    <td className="py-5 pl-6 text-body text-right tabular-nums">
-                      {item.rentalsThisMonth}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <div className="border-t border-black pt-6 mt-6 flex justify-end">
-            <Button href="/sell" variant="secondary" size="md">
-              새 물건 등록
-            </Button>
-          </div>
+          <ListingsTableBlock
+            chatIntakeMode={chatIntakeMode}
+            localListings={listings}
+            serverListingsState={serverListingsState}
+          />
         </div>
       </section>
     </>
@@ -1152,6 +1137,144 @@ function FailureBlock({ rows }: { rows: RentalIntent[] }) {
         </div>
       ) : null}
     </section>
+  );
+}
+
+function ListingsTableBlock({
+  chatIntakeMode,
+  localListings,
+  serverListingsState,
+}: {
+  chatIntakeMode: "local" | "server";
+  localListings: ListingIntent[];
+  serverListingsState: SellerOwnedListingsLoadResult | null;
+}) {
+  // PR 5G — server mode is the authoritative read path when active.
+  // The component never mixes local rows and server rows; it never
+  // falls back to local rows on a server failure. A null state in
+  // server mode means "still loading" — render a calm placeholder
+  // count so the layout stays stable.
+  const isServerMode = chatIntakeMode === "server";
+  const isServerError =
+    isServerMode && serverListingsState?.kind === "error";
+  const serverListings: SellerDashboardListing[] =
+    isServerMode && serverListingsState?.kind === "server"
+      ? serverListingsState.listings
+      : [];
+  const serverLoading = isServerMode && serverListingsState === null;
+
+  const totalCount = isServerMode
+    ? serverListings.length
+    : LISTED_ITEMS.length + localListings.length;
+
+  return (
+    <>
+      <div className="flex items-baseline justify-between border-b border-black pb-4 mb-6">
+        <h3 className="text-title">등록된 물건</h3>
+        <span className="text-caption text-[color:var(--ink-60)]">
+          {totalCount} items
+        </span>
+      </div>
+      {isServerMode && !isServerError ? (
+        <p
+          role="status"
+          className="text-small border border-dashed border-[color:var(--line-dashed)] px-3 py-2 mb-6"
+        >
+          서버에서 불러온 내 리스팅이에요.
+        </p>
+      ) : null}
+      {isServerError ? (
+        <p
+          role="status"
+          className="text-small border border-dashed border-[color:var(--line-dashed)] px-3 py-2 mb-6"
+        >
+          서버 리스팅을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+        </p>
+      ) : null}
+      <div className="overflow-x-auto">
+        <table className="w-full text-left">
+          <thead>
+            <tr className="text-caption text-[color:var(--ink-60)]">
+              <th className="py-3 pr-6 font-medium">물건</th>
+              <th className="py-3 pr-6 font-medium">상태</th>
+              <th className="py-3 pr-6 font-medium text-right">조회</th>
+              <th className="py-3 pl-6 font-medium text-right">
+                이번 달 대여
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {isServerMode
+              ? serverListings.map((l) => (
+                  <tr
+                    key={l.id}
+                    className="border-t border-[color:var(--ink-12)]"
+                  >
+                    <td className="py-5 pr-6 text-body">{l.itemName}</td>
+                    <td className="py-5 pr-6">
+                      <ListingStatusBadge status={l.status} />
+                    </td>
+                    <td className="py-5 pr-6 text-body text-right tabular-nums">
+                      —
+                    </td>
+                    <td className="py-5 pl-6 text-body text-right tabular-nums">
+                      —
+                    </td>
+                  </tr>
+                ))
+              : null}
+            {!isServerMode
+              ? localListings.map((l) => (
+                  <tr
+                    key={l.id}
+                    className="border-t border-[color:var(--ink-12)]"
+                  >
+                    <td className="py-5 pr-6 text-body">{l.item.name}</td>
+                    <td className="py-5 pr-6">
+                      <ListingStatusBadge status={l.status} />
+                    </td>
+                    <td className="py-5 pr-6 text-body text-right tabular-nums">
+                      —
+                    </td>
+                    <td className="py-5 pl-6 text-body text-right tabular-nums">
+                      —
+                    </td>
+                  </tr>
+                ))
+              : null}
+            {!isServerMode
+              ? LISTED_ITEMS.map((item) => (
+                  <tr
+                    key={item.id}
+                    className="border-t border-[color:var(--ink-12)]"
+                  >
+                    <td className="py-5 pr-6 text-body">{item.productName}</td>
+                    <td className="py-5 pr-6">
+                      <ListedStatusBadge status={item.status} />
+                    </td>
+                    <td className="py-5 pr-6 text-body text-right tabular-nums">
+                      {item.views}
+                    </td>
+                    <td className="py-5 pl-6 text-body text-right tabular-nums">
+                      {item.rentalsThisMonth}
+                    </td>
+                  </tr>
+                ))
+              : null}
+          </tbody>
+        </table>
+        {isServerMode && !isServerError && !serverLoading && serverListings.length === 0 ? (
+          <p className="text-small text-[color:var(--ink-60)] mt-6">
+            아직 서버에 저장된 리스팅이 없어요.
+          </p>
+        ) : null}
+      </div>
+      <div className="border-t border-black pt-6 mt-6 flex justify-end">
+        <Button href="/sell" variant="secondary" size="md">
+          새 물건 등록
+        </Button>
+      </div>
+    </>
   );
 }
 

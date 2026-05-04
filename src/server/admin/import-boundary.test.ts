@@ -223,17 +223,89 @@ describe("SSR auth module boundary", () => {
     expect(src).toContain("서버 연결됨 · 베타");
   });
 
-  it("SellerDashboard server-mode listings disclaimer is present (PR 5F transparency)", () => {
-    // The dashboard's listings table is still local-only after
-    // PR 5F; the disclaimer tells the seller their just-saved
-    // server draft will not appear in this table yet. Removing
-    // the disclaimer without externalizing the listings read
-    // path would be a transparency regression.
+  it("SellerDashboard server-mode transparency captions are present (PR 5G)", () => {
+    // PR 5G externalized the listings read path. The dashboard
+    // now renders the SERVER-backed caption while in server mode
+    // and an explicit failure caption when the server read
+    // fails. A future edit that removes either string is a
+    // transparency regression. The pre-PR-5G disclaimer ("이
+    // 화면의 리스팅 목록은 아직 로컬 데모예요…") must be gone —
+    // it was only valid while the listings were still local.
     const file = join(SRC_ROOT, "components", "SellerDashboard.tsx");
     const src = readRel(file);
+    expect(src).toContain("서버에서 불러온 내 리스팅이에요.");
     expect(src).toContain(
-      "이 화면의 리스팅 목록은 아직 로컬 데모예요. 서버에 저장한 초안은 다음",
+      "서버 리스팅을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.",
     );
+    expect(src).not.toContain(
+      "이 화면의 리스팅 목록은 아직 로컬 데모예요",
+    );
+  });
+
+  // Slice A PR 5G — seller dashboard listings externalization.
+
+  it("SellerDashboard never imports from @/server/** directly (uses client adapter)", () => {
+    // Components must route server-action calls through a
+    // `src/lib/client/**` adapter. Regex mirrors the existing
+    // SSR boundary check; we re-assert it for the listings
+    // surface so a future drift to a direct `@/server/listings/...`
+    // import in this file fails loudly.
+    const file = join(SRC_ROOT, "components", "SellerDashboard.tsx");
+    const src = readRel(file);
+    expect(src).not.toMatch(/from\s+["']@\/server\//);
+    // The adapter, however, must be wired in.
+    expect(src).toContain(
+      "@/lib/client/sellerDashboardListingsClient",
+    );
+  });
+
+  it("SellerDashboard guards LISTED_ITEMS rendering behind !isServerMode (PR 5G)", () => {
+    // The static demo fixture must not render in server mode —
+    // mixing demo rows with authentic server rows would mislead
+    // the seller.
+    const file = join(SRC_ROOT, "components", "SellerDashboard.tsx");
+    const src = readRel(file);
+    // Both the local listings array and the LISTED_ITEMS
+    // fixture must be guarded by `!isServerMode` so server mode
+    // never falls back to either source.
+    expect(src).toMatch(/!isServerMode[\s\S]{0,80}LISTED_ITEMS\.map/);
+    expect(src).toMatch(/!isServerMode[\s\S]{0,80}localListings\.map/);
+  });
+
+  it("server-only listings module is never imported by src/components/**", () => {
+    const offenders: string[] = [];
+    for (const f of ALL_FILES) {
+      const rel = relative(SRC_ROOT, f);
+      if (!rel.startsWith("components/")) continue;
+      const src = readRel(f);
+      if (
+        src.includes("@/server/listings/listSellerOwnedListings") ||
+        src.includes("@/server/persistence/supabase/listingRepository")
+      ) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the seller-listings client adapter has no silent local fallback after a server failure", () => {
+    // The adapter MUST surface a `kind: "error"` envelope when
+    // the server action returns a typed failure or throws. It
+    // must NOT call any `getPersistence()` / local listing
+    // service as a backup. A future edit that imports the local
+    // persistence into this adapter would re-introduce the
+    // silent-fallback hole PR 5F closed.
+    const file = join(
+      SRC_ROOT,
+      "lib",
+      "client",
+      "sellerDashboardListingsClient.ts",
+    );
+    const src = readRel(file);
+    expect(src).not.toContain("getPersistence");
+    expect(src).not.toContain("@/lib/services/listingService");
+    expect(src).not.toContain("@/lib/adapters/persistence");
+    expect(src).toContain('return { kind: "error" }');
   });
 
   // Slice A PR 5E — listing-draft writer boundary.
