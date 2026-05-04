@@ -74,7 +74,7 @@ describe("getReturnTrustStatusCopy", () => {
 
 describe("LISTING_CARD_COPY", () => {
   it("contains the documented strings", () => {
-    expect(LISTING_CARD_COPY.tryBeforeBuy).toBe("사기 전 며칠만 써보기");
+    expect(LISTING_CARD_COPY.tryBeforeBuy).toBe("사기 전 며칠 써보기");
     expect(LISTING_CARD_COPY.conditionCheck).toBe("픽업·반납 상태 확인");
     expect(LISTING_CARD_COPY.approvalRequired).toBe("요청 후 대여 가능 여부 확인");
   });

@@ -124,7 +124,7 @@ This name can still change later, but it is now the working project name and rep
 
 Current primary positioning:
 
-> **사기 전에, 며칠만 살아보기.**
+> **사기 전에, 며칠 써보기.**
 
 Working English version:
 
@@ -525,7 +525,7 @@ Purpose:
 
 Core content:
 
-- headline: 사기 전에, 며칠만 살아보기.
+- headline: 사기 전에, 며칠 써보기.
 - supporting copy framing CoRent as a Korea-wide short-term rental product (Seoul examples in seed data are illustrative only)
 - primary CTA: 며칠 써볼 물건 찾기
 - secondary CTA: 내 물건 빌려주기

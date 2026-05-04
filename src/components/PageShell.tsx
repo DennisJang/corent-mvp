@@ -69,7 +69,7 @@ function SiteFooter({ width }: { width: "main" | "dashboard" }) {
         <div className="flex flex-col gap-2">
           <span className="text-[16px] font-bold tracking-tight">CoRent</span>
           <span className="text-small text-[color:var(--ink-60)]">
-            사기 전에, 며칠만 살아보기. — Seoul beta
+            사기 전에, 며칠 써보기. — Seoul beta
           </span>
         </div>
         <div className="flex gap-8 text-small text-[color:var(--ink-60)]">

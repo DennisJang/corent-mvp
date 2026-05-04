@@ -62,7 +62,7 @@ const PRODUCT_SEEDS: ProductSeed[] = [
       serialOnFile: true,
     },
     summary:
-      "구매가 부담스러운 프리미엄 드라이어를 일주일 살아보기 좋은 옵션. 모발 손상 체감을 직접 확인.",
+      "구매가 부담스러운 프리미엄 드라이어를 일주일 써보기 좋은 옵션. 모발 손상 체감을 직접 확인.",
     hero: { initials: "DS" },
   },
   {

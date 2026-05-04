@@ -132,7 +132,7 @@ from "first thing you see" to "visible alongside intent and trust."
 Recommended on-card hierarchy:
 
 1. **Experience desire / try-before-buy framing** — e.g.
-   `사기 전 며칠만 써보기`.
+   `사기 전 며칠 써보기`.
 2. **Product identity** — name, category.
 3. **Return trust signal** — e.g. `픽업·반납 상태 확인`,
    `안전 코드 사진 검증 완료`.

@@ -24,9 +24,9 @@ const TRUST_POINTS = [
 ];
 
 const DURATIONS = [
-  { key: "1d", label: "01 / DAY", title: "하루만 살아보기" },
-  { key: "3d", label: "03 / DAYS", title: "주말 동안 살아보기" },
-  { key: "7d", label: "07 / DAYS", title: "한 주 동안 살아보기" },
+  { key: "1d", label: "01 / DAY", title: "하루만 써보기" },
+  { key: "3d", label: "03 / DAYS", title: "주말 동안 써보기" },
+  { key: "7d", label: "07 / DAYS", title: "한 주 동안 써보기" },
 ];
 
 export default function LandingPage() {
@@ -54,9 +54,7 @@ export default function LandingPage() {
               <h1 className="text-display">
                 사기 전에,
                 <br />
-                며칠만
-                <br />
-                살아보기.
+                며칠 써보기.
               </h1>
               <p className="text-body text-[color:var(--ink-80)] max-w-[480px]">
                 서울에서 마사지건, 홈케어 디바이스, 소형 운동기구를 1일·3일·7일
@@ -150,7 +148,7 @@ export default function LandingPage() {
           <div className="flex items-end justify-between flex-wrap gap-6 border-b border-black pb-6 mb-12">
             <div className="flex flex-col gap-3">
               <span className="text-caption">Selected / 03 items</span>
-              <h2 className="text-h2">며칠만 살아볼 만한 물건들</h2>
+              <h2 className="text-h2">며칠 써볼 만한 물건들</h2>
             </div>
             <Button href="/search" variant="secondary" size="md">
               전체 결과 보기

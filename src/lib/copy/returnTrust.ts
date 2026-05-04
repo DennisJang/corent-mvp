@@ -24,7 +24,7 @@ import { formatKRW } from "@/lib/format";
 
 export const LISTING_CARD_COPY = {
   // 1. Experience desire / try-before-buy framing.
-  tryBeforeBuy: "사기 전 며칠만 써보기",
+  tryBeforeBuy: "사기 전 며칠 써보기",
   // 3. Return trust signal.
   conditionCheck: "픽업·반납 상태 확인",
   // 5. Request / approval condition.
@@ -218,7 +218,7 @@ export const STOREFRONT_COPY = {
   introTitle: "공개 프로필",
   // Default seller intro shown when no per-seller copy is on file.
   defaultIntro:
-    "이 셀러는 사기 전 며칠 살아보기 위한 물건을 함께 빌려줍니다.",
+    "이 셀러는 사기 전 며칠 써보기 위한 물건을 함께 빌려줍니다.",
   listingsHeading: "이 셀러의 물건",
   emptyListings: "아직 등록된 물건이 없어요.",
   trustHeading: "신뢰 이력",

@@ -785,7 +785,7 @@ Hero headline:
 
 ```txt
 사기 전에,
-며칠만 살아보기.
+며칠 써보기.
 ```
 
 Supporting copy:

@@ -39,7 +39,7 @@ It helps people:
 
 Main consumer positioning:
 
-> 사기 전에, 며칠만 살아보기.
+> 사기 전에, 며칠 써보기.
 
 Seller positioning:
 

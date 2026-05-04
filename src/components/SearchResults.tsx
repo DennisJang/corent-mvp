@@ -126,7 +126,7 @@ export function SearchResults() {
                 </span>
               </div>
               <h1 className="text-h1">
-                며칠만 써볼 만한 물건들을 찾았어요.
+                며칠 써볼 만한 물건들을 찾았어요.
               </h1>
               <p className="text-body text-[color:var(--ink-60)] max-w-[520px]">
                 {rawInput
