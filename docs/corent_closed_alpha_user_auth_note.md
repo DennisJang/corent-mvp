@@ -107,21 +107,24 @@ remains PR 5D.
 
 ## What lands next
 
-PR 5D **landed**: the server-backed intake dispatch smoke +
-split-brain guard. `start` / `append` actions dispatch to the
-Supabase intake writer in supabase mode + supabase actor;
-`createIntakeListingDraftAction` fails closed with a typed
-`unsupported` / `supabase_listing_draft_not_yet_wired` to
-prevent a Supabase-intake / local-listing hybrid. See
-[`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](corent_closed_alpha_intake_dispatch_smoke_note.md).
+PR 5D and PR 5E both **landed**:
 
-PR 5E (or later) — **listing draft externalization** — is the
-prerequisite for the visible client-adapter flip. Until listing
-draft persistence is externalized through the chat intake
-service (mirroring the `IntakeWriter` swappable shape for
-listing drafts), `SHARED_SERVER_MODE` stays `false` and the
-visible browser chat intake stays on the local-persistence demo
-path.
+- **PR 5D** — server-backed intake dispatch smoke + temporary
+  split-brain guard. See
+  [`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](corent_closed_alpha_intake_dispatch_smoke_note.md).
+- **PR 5E** — listing draft externalization via
+  `ListingDraftWriter`. PR 5D's `unsupported` guard is removed;
+  `createIntakeListingDraftAction` now completes end-to-end in
+  supabase mode + supabase actor. See
+  [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](corent_closed_alpha_listing_draft_externalization_note.md).
+
+The only remaining slice is the **visible client adapter flip** —
+replacing `SHARED_SERVER_MODE` in
+[`src/lib/client/chatIntakeClient.ts`](../src/lib/client/chatIntakeClient.ts)
+with a runtime probe / per-session opt-in cookie /
+founder-controlled gate. Until that lands, the visible browser
+chat intake stays on the local-persistence demo path even though
+every server-side prerequisite is now in place.
 
 ## References
 

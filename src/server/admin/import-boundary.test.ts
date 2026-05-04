@@ -192,6 +192,100 @@ describe("SSR auth module boundary", () => {
     expect(src).toContain("const SHARED_SERVER_MODE = false");
     expect(src).not.toContain("const SHARED_SERVER_MODE = true");
   });
+
+  // Slice A PR 5E — listing-draft writer boundary.
+
+  it("server-only listing-draft modules are never imported by src/components/**", () => {
+    const offenders: string[] = [];
+    for (const f of ALL_FILES) {
+      const rel = relative(SRC_ROOT, f);
+      if (!rel.startsWith("components/")) continue;
+      const src = readRel(f);
+      if (
+        src.includes("@/server/intake/supabaseListingDraftWriter") ||
+        src.includes("@/server/intake/listingDraftWriterDispatcher")
+      ) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("the supabase listing-draft writer never references SUPABASE_ANON_KEY directly", () => {
+    // The marketplace service-role client is the only thing it
+    // talks to (via `saveListing` / `getListingById`). It must
+    // not reach for the anon-key reader.
+    const file = join(
+      SRC_ROOT,
+      "server",
+      "intake",
+      "supabaseListingDraftWriter.ts",
+    );
+    const src = readRel(file);
+    expect(src).not.toContain("SUPABASE_ANON_KEY");
+    expect(src).not.toContain("readSupabaseAuthEnv");
+  });
+
+  it("createListingDraftFromIntake never calls getPersistence() (PR 5E split-brain prevention)", () => {
+    // PR 5E externalized listing-draft persistence through the
+    // ListingDraftWriter seam. Any direct `getPersistence()` call
+    // inside `createListingDraftFromIntake` would re-introduce a
+    // split-brain path in supabase mode (intake in Supabase,
+    // listing in localStorage). The chat intake service file
+    // still imports `getPersistence` for unrelated reasons would
+    // be a regression — assert only the comment-section mention
+    // exists, not a live call.
+    const file = join(
+      SRC_ROOT,
+      "lib",
+      "services",
+      "chatListingIntakeService.ts",
+    );
+    const src = readRel(file);
+    // Find the function body and assert no `getPersistence(` call
+    // appears inside it. We scan the whole file for `getPersistence(`
+    // and require ZERO live calls. Comment-only mentions of
+    // `getPersistence()` (with no arg list immediately following
+    // a leading `//` or block-comment context) are filtered by
+    // matching the actual call shape `getPersistence()`. Any line
+    // that has the call but is preceded by `// ` is a comment.
+    const lines = src.split(/\r?\n/);
+    const liveCalls: { line: number; text: string }[] = [];
+    for (const [i, line] of lines.entries()) {
+      if (!/getPersistence\(\)/.test(line)) continue;
+      const trimmed = line.trimStart();
+      if (trimmed.startsWith("//") || trimmed.startsWith("*")) continue;
+      // Block-comment middle lines ("//      ...") were already
+      // caught above; the only remaining false positive is a
+      // string literal. The chat intake service does not embed
+      // `getPersistence()` in any string today, so we treat any
+      // surviving line as a live call.
+      liveCalls.push({ line: i + 1, text: line });
+    }
+    expect(
+      liveCalls,
+      "createListingDraftFromIntake (and surrounding service body) must not call getPersistence() directly after PR 5E",
+    ).toEqual([]);
+  });
+
+  it("listing-draft dispatcher and intake dispatcher remain symmetric (PR 5E invariant)", () => {
+    // Static-text guard: both dispatcher files must key on
+    // `getBackendMode()` and `actor.source` and return null in
+    // the same combination (supabase mode + mock actor). A future
+    // edit that asymmetrically loosens one side would re-open
+    // the split-brain hole.
+    const intake = readRel(
+      join(SRC_ROOT, "server", "intake", "intakeWriterDispatcher.ts"),
+    );
+    const listing = readRel(
+      join(SRC_ROOT, "server", "intake", "listingDraftWriterDispatcher.ts"),
+    );
+    for (const src of [intake, listing]) {
+      expect(src).toContain('getBackendMode() !== "supabase"');
+      expect(src).toContain('actor.source !== "supabase"');
+      expect(src).toContain("return null");
+    }
+  });
 });
 
 describe("NEXT_PUBLIC_* deny-list (security review §3.20)", () => {

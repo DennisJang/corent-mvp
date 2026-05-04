@@ -1,14 +1,26 @@
 # Closed-alpha intake dispatch smoke note (Slice A PR 5D)
 
+> **Status update (Slice A PR 5E)**: the temporary `unsupported`
+> guard described below has been **removed**. PR 5E externalized
+> listing draft persistence through a sibling `ListingDraftWriter`
+> seam, so `createIntakeListingDraftAction` now succeeds
+> end-to-end in supabase mode + supabase actor. See
+> [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](corent_closed_alpha_listing_draft_externalization_note.md)
+> for the new full-dispatch contract. The "What PR 5D does NOT do"
+> table below — and especially the "listing draft externalization
+> ... PR 5E or later" item — is the historical posture as of PR 5D
+> only.
+
 PR 5D proves that the chat intake **server action path** can
 safely dispatch to the Supabase intake writer for an
 authenticated, provisioned seller in `CORENT_BACKEND_MODE=supabase`,
 without flipping the visible client runtime and without creating
 a Supabase-intake / local-listing **split-brain**.
 
-It is the fourth and last server-side prerequisite for the chat
-intake dispatch flip. PR 5E or later must externalize listing
-draft persistence before the visible client can be flipped.
+It is the fourth server-side prerequisite for the chat intake
+dispatch flip. PR 5E (the next slice) externalizes listing draft
+persistence so the dispatch flip itself is the only remaining
+piece.
 
 ## What PR 5D adds (and what stays the same)
 

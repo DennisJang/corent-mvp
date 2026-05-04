@@ -31,8 +31,8 @@ import {
   ChatIntakeInputError,
   createChatListingIntakeService,
 } from "@/lib/services/chatListingIntakeService";
-import { getBackendMode } from "@/server/backend/mode";
 import { getIntakeWriter } from "@/server/intake/intakeWriterDispatcher";
+import { getListingDraftWriter } from "@/server/intake/listingDraftWriterDispatcher";
 import { runIntentCommand } from "@/server/intents/intentCommand";
 import {
   intentErr,
@@ -112,35 +112,28 @@ function intakeUnauthenticated<T>(): IntentResult<T> {
   );
 }
 
-// Slice A PR 5D — split-brain guard for `createIntakeListingDraftAction`.
+// Slice A PR 5D / PR 5E history.
 //
-// The chat intake service's `createListingDraftFromIntake` step
-// reads the session via the dispatched `IntakeWriter` (Supabase in
-// supabase-mode + supabase actor) but writes the *listing draft*
-// row through `getPersistence()` (local-only, even in supabase
-// mode). Letting that path run end-to-end in supabase mode would
-// produce a hybrid where:
+// PR 5D introduced a split-brain guard that returned
+// `{ code: "unsupported", message: "supabase_listing_draft_not_yet_wired" }`
+// for `createIntakeListingDraftAction` in supabase mode. The
+// guard placeholdered the period during which the intake side
+// could land in Supabase but the listing-draft side still went
+// through `getPersistence()` (local-only).
 //
-//   - `listing_intake_sessions` row is in Supabase,
-//   - `listing_intake_messages` rows are in Supabase,
-//   - `listing_extractions` row is in Supabase,
-//   - `session.listingIntentId` (Supabase) points at a listing
-//     id that exists ONLY in localStorage.
+// PR 5E externalized listing draft persistence via
+// `ListingDraftWriter` + `getListingDraftWriter(actor)`. The
+// supabase + supabase combination now routes both writers to
+// Supabase repositories simultaneously, so the guard is no longer
+// reachable for that combination. The action below resolves both
+// writers and fails closed `unauthenticated` whenever either
+// dispatcher returns null (preserving the PR 3 / PR 4 / PR 5D
+// failure shape for the `supabase + mock-actor` row).
 //
-// PR 5D forbids that combination. Until listing draft persistence
-// is externalized in a later PR (with its own migrations + tests),
-// `createIntakeListingDraftAction` fails closed in supabase mode
-// AFTER auth and capability checks but BEFORE any intake read or
-// write fires — so no partial state lands in Supabase either.
-//
-// The message is non-secret: no table names, no SQL, no env names,
-// no service-role hints, no row payloads.
-function intakeListingDraftUnsupportedInSupabase<T>(): IntentResult<T> {
-  return intentErr<T>(
-    "unsupported",
-    "supabase_listing_draft_not_yet_wired",
-  );
-}
+// The `unsupported` IntentErrorCode is intentionally retained in
+// `src/server/intents/intentResult.ts` for future
+// configuration-not-yet-supported branches; PR 5E does not emit
+// it from any chat intake action.
 
 // --------------------------------------------------------------
 // Error mapping helper — translates the chat intake domain errors
@@ -279,16 +272,17 @@ export async function createIntakeListingDraftAction(
       if (!writer) {
         return intakeUnauthenticated<CreateIntakeListingDraftResult>();
       }
-      // Split-brain guard (PR 5D). Fires AFTER the unauthenticated
-      // gate so a mock-sourced actor in supabase mode still gets
-      // the existing `unauthenticated` shape; only the
-      // supabase-mode + supabase-sourced combination — the one
-      // where the intake side would land in Supabase but the
-      // listing draft would land in localStorage — hits this
-      // branch. The check runs before any service call so no
-      // partial state lands in Supabase.
-      if (getBackendMode() === "supabase") {
-        return intakeListingDraftUnsupportedInSupabase<CreateIntakeListingDraftResult>();
+      // PR 5E — resolve the listing-draft writer alongside the
+      // intake writer. Both must be present for the action to
+      // proceed; if either is null (supabase mode + mock actor)
+      // we fail closed with the same `unauthenticated` shape.
+      // The two dispatchers share an identical decision table, so
+      // a null on one side guarantees a null on the other in
+      // practice — but we re-check defensively so a future drift
+      // cannot quietly land a single-sided writer combo.
+      const draftWriter = getListingDraftWriter(actor);
+      if (!draftWriter) {
+        return intakeUnauthenticated<CreateIntakeListingDraftResult>();
       }
       if (
         typeof payload.sessionId !== "string" ||
@@ -297,7 +291,7 @@ export async function createIntakeListingDraftAction(
         return intentErr("input", "sessionId required");
       }
       try {
-        const service = createChatListingIntakeService(writer);
+        const service = createChatListingIntakeService(writer, draftWriter);
         const result = await service.createListingDraftFromIntake(
           payload.sessionId,
           actor.sellerId,

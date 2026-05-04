@@ -29,12 +29,15 @@ import type {
 } from "@/domain/intake";
 import type { ListingIntent } from "@/domain/intents";
 import { OwnershipError } from "@/lib/auth/guards";
-import { getPersistence } from "@/lib/adapters/persistence";
 import { generateId, nowIso } from "@/lib/ids";
 import {
   localIntakeWriter,
   type IntakeWriter,
 } from "@/lib/intake/intakeWriter";
+import {
+  localListingDraftWriter,
+  type ListingDraftWriter,
+} from "@/lib/intake/listingDraftWriter";
 import {
   buildAssistantSummary,
   extractIntake,
@@ -96,21 +99,30 @@ export type ChatListingIntakeService = {
   ): Promise<{ session: IntakeSession; listing: ListingIntent }>;
 };
 
-// Factory variant — Slice A PR 4. The service body is identical to
-// the pre-PR-4 implementation, with the difference that every chat
-// intake persistence call now goes through the supplied
-// `IntakeWriter` instead of `getPersistence()` directly. The
-// default writer is `localIntakeWriter`, which itself wraps
-// `getPersistence()` — so the default const-export
-// (`chatListingIntakeService`) preserves byte-identical behavior
-// for every existing caller (chat intake card, tests, etc.).
+// Factory — Slice A PR 4 / PR 5E. Every persistence call goes
+// through one of two pluggable writers:
 //
-// `getListingIntent` / `listingService.saveDraft` calls inside
-// `createListingDraftFromIntake` continue to use `getPersistence()`
-// directly — the writer covers chat intake methods only. Future
-// PRs that wire the listing side will extend the seam separately.
+//   - `IntakeWriter` (PR 4) — chat intake session / messages /
+//     extraction.
+//   - `ListingDraftWriter` (PR 5E) — listing draft id allocation,
+//     save, and read by id.
+//
+// The default writers are `localIntakeWriter` + `localListingDraftWriter`,
+// both of which wrap the same `getPersistence()` calls the service
+// used pre-PR-5E. The default const-export
+// (`chatListingIntakeService`) therefore preserves byte-identical
+// behavior for every existing caller (chat intake card, tests,
+// etc.).
+//
+// PR 5E removes the last `getPersistence()` listing-side calls
+// from `createListingDraftFromIntake`. Both sides of the
+// chat-to-listing transaction now route through the same
+// dispatcher decision (mock vs supabase, mock-actor vs
+// supabase-actor), eliminating the split-brain hole PR 5D's
+// `unsupported` guard placeholdered.
 export function createChatListingIntakeService(
   writer: IntakeWriter = localIntakeWriter,
+  listingDraftWriter: ListingDraftWriter = localListingDraftWriter,
 ): ChatListingIntakeService {
   return {
     async startSession(actorSellerId: string): Promise<IntakeSession> {
@@ -238,21 +250,22 @@ export function createChatListingIntakeService(
     },
 
     // Create a private ListingIntent draft from the most recent
-    // extraction. Reuses `listingService.draftFromInput` (which builds
-    // a verification subtree, computes the recommended price table,
-    // and stamps the seller-input string) and `listingService.saveDraft`
-    // (which validates and persists). The resulting listing has
-    // `status === "draft"` — never `"approved"`. PublicListing
-    // projection is unchanged and continues to filter out any non-
-    // approved row.
+    // extraction. Reuses `listingService.draftFromInput` (which
+    // builds a verification subtree, computes the recommended
+    // price table, and stamps the seller-input string) and the
+    // pluggable `ListingDraftWriter` (which validates + persists
+    // and mirrors the `ai_extracted → draft` transition). The
+    // resulting listing has `status === "draft"` — never
+    // `"approved"`. PublicListing projection is unchanged and
+    // continues to filter out any non-approved row.
     //
-    // Listing-side reads/writes (`getListingIntent`,
-    // `listingService.saveDraft`) intentionally stay on
-    // `getPersistence()` in PR 4 — extending the writer to listings
-    // is a future slice. In the unreachable-today supabase + supabase
-    // branch this means the intake side writes to Supabase but the
-    // listing draft itself goes to local persistence; documented in
-    // `docs/phase2_marketplace_schema_draft.md` Slice A PR 4.
+    // PR 5E: every listing-side read/write goes through
+    // `listingDraftWriter`. There is no `getPersistence()` call
+    // anywhere in this method. The writer's local variant
+    // delegates to the previous `listingService.saveDraft` +
+    // `getPersistence().getListingIntent` calls so the same-browser
+    // demo stays byte-identical; the supabase variant routes
+    // through `saveListing` + `getListingById`.
     async createListingDraftFromIntake(
       sessionId: string,
       actorSellerId: string,
@@ -267,8 +280,10 @@ export function createChatListingIntakeService(
       assertSessionOwnedBy(session, actorSellerId);
       if (session.status === "draft_created" && session.listingIntentId) {
         // Idempotent: re-loading an already-finalized session returns
-        // the existing draft.
-        const existing = await getPersistence().getListingIntent(
+        // the existing draft. The writer's `getListingIntent` returns
+        // the canonical record from whichever store the listing was
+        // saved to.
+        const existing = await listingDraftWriter.getListingIntent(
           session.listingIntentId,
         );
         if (existing) return { session, listing: existing };
@@ -287,11 +302,15 @@ export function createChatListingIntakeService(
       // is the only seller id ever passed downstream; the session's
       // own `sellerId` was already stamped from the actor at start
       // time, but we re-pin from the actor here as defense in depth.
+      // PR 5E: the listing id is allocated by the writer so the
+      // format matches the eventual save target (`li_<16hex>` in
+      // local mode; uuid in supabase mode).
       const initial = listingService.draftFromInput({
         sellerId: actorSellerId,
         rawInput: sellerText,
         fallbackCategory: extraction.category ?? "massage_gun",
         fallbackEstimatedValue: extraction.estimatedValue ?? 200_000,
+        id: listingDraftWriter.newDraftId(),
       });
 
       // Layer the extracted fields the AI parser inside
@@ -309,18 +328,21 @@ export function createChatListingIntakeService(
         estimatedValue: extraction.estimatedValue,
       });
 
-      // `saveDraft` validates and transitions ai_extracted → draft. The
-      // listing is owned by `actorSellerId` regardless of what the
-      // session record holds.
+      // The listing is owned by `actorSellerId` regardless of what
+      // the session record holds. `saveListingDraft` validates +
+      // mirrors the `ai_extracted → draft` transition (local
+      // delegates to `listingService.saveDraft`; supabase does the
+      // transition explicitly inside the writer).
       const persisted: ListingIntent = {
         ...merged,
         sellerId: actorSellerId,
       };
-      await listingService.saveDraft(persisted);
-      // saveDraft writes status: "draft" — read it back so the caller
-      // gets the canonical record.
+      await listingDraftWriter.saveListingDraft(persisted);
+      // Read back so the caller gets the canonical record (status
+      // moved to `'draft'`, verification.id may have been replaced
+      // with a server-generated uuid in supabase mode).
       const reloaded =
-        (await getPersistence().getListingIntent(persisted.id)) ?? persisted;
+        (await listingDraftWriter.getListingIntent(persisted.id)) ?? persisted;
 
       const updatedSession: IntakeSession = {
         ...session,

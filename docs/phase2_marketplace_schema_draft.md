@@ -511,7 +511,7 @@ service's existing try/catch surfaces it via the runner's
   Supabase client. The test also asserts the mock-actor + supabase
   combination never reaches the writer.
 
-### PR 5 prerequisites (PR 5A + 5B + 5C + 5D landed — resolver + manual provisioning + user sign-in + intake dispatch smoke + split-brain guard)
+### PR 5 prerequisites (PR 5A + 5B + 5C + 5D + 5E landed — server-side path complete)
 
 PR 5 is the auth + dispatch-flip slice. PR 5A landed the
 **closed-alpha actor resolution** prerequisite. PR 5B added the
@@ -519,12 +519,15 @@ PR 5 is the auth + dispatch-flip slice. PR 5A landed the
 template. PR 5C added the **closed-alpha CoRent user sign-in
 entry path** (one shared, non-admin Supabase Auth magic-link
 flow). PR 5D added the **server-backed intake dispatch smoke**
-(start / append reach the Supabase intake writer for an
-authenticated seller actor) **and the listing-draft split-brain
-guard** (createDraft fails closed `unsupported` in supabase mode
-until listing draft persistence is externalized). The remaining
-item — the dispatch flip itself — is now blocked only on listing
-draft externalization (PR 5E or later).
+plus a temporary **listing-draft split-brain guard** (createDraft
+returned `unsupported` in supabase mode until listing draft
+persistence was externalized). PR 5E **externalized listing
+draft persistence** through a sibling `ListingDraftWriter` seam
+that mirrors the `IntakeWriter` dispatcher decision; both
+writers route to Supabase together in supabase mode + supabase
+actor, eliminating the split-brain hole and removing the PR 5D
+guard. The only remaining item is the **visible client adapter
+flip** (a separate later slice).
 
 1. ✅ **Closed-alpha CoRent user sign-in / callback route** —
    landed in PR 5C. New routes at
@@ -559,34 +562,43 @@ draft externalization (PR 5E or later).
    between seller/renter actors via the new `prefer` option that
    `runIntentCommand` forwards. See
    [`docs/corent_closed_alpha_actor_resolver_note.md`](./corent_closed_alpha_actor_resolver_note.md).
-4. ✅ **Server-backed intake dispatch smoke + split-brain guard** —
-   landed in PR 5D. `start` / `append` actions dispatch to the
-   Supabase intake writer for an authenticated seller actor in
-   supabase mode. `createIntakeListingDraftAction` fails closed
-   with a typed `unsupported` /
+4. ✅ **Server-backed intake dispatch smoke + temporary split-brain
+   guard** — landed in PR 5D. `start` / `append` actions
+   dispatched to the Supabase intake writer for an authenticated
+   seller actor in supabase mode. `createIntakeListingDraftAction`
+   failed closed `unsupported` /
    `supabase_listing_draft_not_yet_wired` until listing draft
-   persistence is externalized — preventing a Supabase-intake /
-   local-listing split-brain. The supabase writer is never
-   touched on the failing branch. See
+   persistence was externalized. See
    [`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](./corent_closed_alpha_intake_dispatch_smoke_note.md).
-5. **Listing draft externalization + dispatch flip** — externalize
-   listing draft persistence through the chat intake service
-   (mirror the `IntakeWriter` swappable shape for the listing
-   draft path), then replace `SHARED_SERVER_MODE` in
-   `chatIntakeClient.ts` with a runtime probe or other
-   founder-controlled gate so the visible chat intake UI starts
-   talking to the server-backed dispatcher for opted-in
-   sessions. *Tracked as PR 5E or later.* Not in PR 5A–5D.
+5. ✅ **Listing draft externalization** — landed in PR 5E. New
+   `ListingDraftWriter` interface
+   ([`src/lib/intake/listingDraftWriter.ts`](../src/lib/intake/listingDraftWriter.ts))
+   mirrors `IntakeWriter`. The local variant preserves
+   `li_<16hex>` ids; the supabase variant
+   ([`src/server/intake/supabaseListingDraftWriter.ts`](../src/server/intake/supabaseListingDraftWriter.ts))
+   allocates uuids and routes through the existing `saveListing`
+   + `getListingById` repo. A symmetric server-only dispatcher
+   ([`src/server/intake/listingDraftWriterDispatcher.ts`](../src/server/intake/listingDraftWriterDispatcher.ts))
+   shares its decision table with `getIntakeWriter`. The chat
+   intake service threads both writers; `createListingDraftFromIntake`
+   no longer calls `getPersistence()` (asserted by static-text
+   guard). PR 5D's `unsupported` guard is removed; createDraft
+   in supabase mode now succeeds end-to-end. See
+   [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](./corent_closed_alpha_listing_draft_externalization_note.md).
+6. **Visible client adapter flip** — replace `SHARED_SERVER_MODE`
+   in `chatIntakeClient.ts` with a runtime probe / per-session
+   opt-in cookie / founder-controlled gate so the visible chat
+   intake UI starts talking to the server-backed dispatcher for
+   opted-in sessions. *Tracked as PR 5F or later.* Not in PR 5A–5E.
 
-Once item 5 is in place, PR 4's dispatcher seam goes live across
-the full chat intake (start, append, AND createDraft). PR 5A's
-resolver fulfills the auth-bound `source: "supabase"` actor
-contract, PR 5B seeded the profile / capability rows it reads,
-PR 5C lets a tester establish the auth session, and PR 5D proved
-the server-side dispatch path under
-`CORENT_BACKEND_MODE=supabase` while protecting against the
-split-brain that would otherwise appear before listing draft
-externalization.
+Once item 6 lands, PR 4's dispatcher seam goes live in the
+visible browser surface for opted-in sessions. PR 5A's resolver
+fulfills the auth-bound `source: "supabase"` actor contract,
+PR 5B's manual workflow seeds the profile / capability rows it
+reads, PR 5C lets a tester establish the auth session, and
+PR 5D + 5E together prove the full server-side dispatch path
+(start, append, AND createDraft) under
+`CORENT_BACKEND_MODE=supabase` with no split-brain possibility.
 
 ### Related executable contracts (must continue to pass)
 

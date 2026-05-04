@@ -164,14 +164,22 @@ for the route layout (`/login` → `/auth/sign-in` → `/auth/callback`),
 the `shouldCreateUser: false` posture, and the assertion that
 the founder allowlist is not consulted on the user surface.
 
-PR 5D — the **dispatch flip** (replacing `SHARED_SERVER_MODE` in
-`chatIntakeClient.ts` with a runtime probe or other
-founder-controlled gate) — wires the resolver's `source:
-"supabase"` actor through to the chat intake supabase writer.
-Until then, the resolver, the dispatcher, the supabase writer,
-and the user sign-in route all exist but the visible chat intake
-UI continues to use local persistence — exactly the fail-closed
-posture the pre-revenue beta plan requires.
+PR 5D + 5E both landed afterward: PR 5D added the server-backed
+intake dispatch smoke (with a temporary
+`supabase_listing_draft_not_yet_wired` guard for createDraft);
+PR 5E externalized listing-draft persistence and removed that
+guard, so `createIntakeListingDraftAction` now succeeds
+end-to-end in supabase mode + supabase actor. See
+[`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](corent_closed_alpha_intake_dispatch_smoke_note.md)
+and
+[`docs/corent_closed_alpha_listing_draft_externalization_note.md`](corent_closed_alpha_listing_draft_externalization_note.md).
+
+The remaining slice is the **visible client adapter flip**
+(`SHARED_SERVER_MODE` in `chatIntakeClient.ts` → runtime probe /
+per-session opt-in cookie / founder-controlled gate). Until that
+lands, the visible browser chat intake stays on local persistence
+even though every server-side prerequisite is in place — exactly
+the fail-closed posture the pre-revenue beta plan requires.
 
 ## References
 

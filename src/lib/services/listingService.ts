@@ -29,6 +29,13 @@ type DraftFromInputArgs = {
   // one. Reseed-omitted calls (e.g. user clicks "AI로 다시 추출") still
   // generate fresh random ids.
   idSeed?: string;
+  // Slice A PR 5E — explicit listing id override. When supplied,
+  // overrides both `idSeed` and the random `generateId("li")`
+  // fallback. Used by `chatListingIntakeService` so the listing id
+  // can match the writer's preferred format (uuid in supabase
+  // mode; `li_<16hex>` in local mode). Local callers leave this
+  // unset and keep the existing id format.
+  id?: string;
   // The createdAt/updatedAt timestamps default to `nowIso()`. Tests and
   // SSR seed the value to keep snapshots stable.
   at?: string;
@@ -52,10 +59,17 @@ export const listingService = {
     fallbackCategory = "massage_gun",
     fallbackEstimatedValue = 200000,
     idSeed,
+    id: providedId,
     at: providedAt,
   }: DraftFromInputArgs): DraftListing {
     const parsed = mockAIParser.parseSellerInput(rawInput);
-    const id = idSeed ? `li_${idSeed}` : generateId("li");
+    // Slice A PR 5E — explicit `id` wins over `idSeed` wins over
+    // random. The verification id stays on the existing
+    // `vi_<...>` format because the Phase 2 schema generates its
+    // own uuid for `listing_verifications.id` and the read-back
+    // returns the canonical value; the in-memory `vi_` is local
+    // metadata only.
+    const id = providedId ?? (idSeed ? `li_${idSeed}` : generateId("li"));
     const at = providedAt ?? nowIso();
     const estimatedValue = parsed.estimatedValue ?? fallbackEstimatedValue;
     const prices = calculateRecommendedPriceTable(estimatedValue);

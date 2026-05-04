@@ -55,8 +55,24 @@ vi.mock("@/server/intake/supabaseIntakeWriter", () => ({
   },
 }));
 
+// PR 5E — also mock the supabase listing-draft writer at the
+// module level so the supabase + supabase-actor tests can verify
+// the createDraft path reaches the supabase listings repo
+// without standing up a real client.
+vi.mock("@/server/intake/supabaseListingDraftWriter", () => ({
+  supabaseListingDraftWriter: {
+    newDraftId: vi.fn(() => "00000000-0000-4000-8000-000000000000"),
+    saveListingDraft: vi.fn(async () => {}),
+    getListingIntent: vi.fn(async () => null),
+  },
+  ListingDraftWriteError: class ListingDraftWriteError extends Error {
+    readonly code = "save_listing_draft_failed";
+  },
+}));
+
 import { resolveServerActor } from "@/server/actors/resolveServerActor";
 import { supabaseIntakeWriter } from "@/server/intake/supabaseIntakeWriter";
+import { supabaseListingDraftWriter } from "@/server/intake/supabaseListingDraftWriter";
 import {
   appendIntakeSellerMessageAction,
   createIntakeListingDraftAction,
@@ -65,6 +81,7 @@ import {
 
 const mockResolver = vi.mocked(resolveServerActor);
 const mockSupabaseWriter = vi.mocked(supabaseIntakeWriter);
+const mockSupabaseListingDraftWriter = vi.mocked(supabaseListingDraftWriter);
 
 const REPRESENTATIVE_INPUT =
   "테라건 미니 빌려줄게요. 거의 안 썼고 강남역 근처에서 픽업 가능해요. 하루 9000원이면 좋겠어요.";
@@ -91,6 +108,9 @@ afterEach(async () => {
   mockSupabaseWriter.listIntakeMessagesForSession.mockClear();
   mockSupabaseWriter.saveIntakeExtraction.mockClear();
   mockSupabaseWriter.getIntakeExtractionForSession.mockClear();
+  mockSupabaseListingDraftWriter.newDraftId.mockClear();
+  mockSupabaseListingDraftWriter.saveListingDraft.mockClear();
+  mockSupabaseListingDraftWriter.getListingIntent.mockClear();
   await getPersistence().clearAll();
 });
 
@@ -258,17 +278,16 @@ describe("intake server actions — supabase mode + supabase actor (PR 4 dispatc
     expect(localSessions).toEqual([]);
   });
 
-  it("createIntakeListingDraftAction fails closed in supabase mode (PR 5D split-brain guard)", async () => {
-    // PR 5D revised contract. Until listing draft persistence is
-    // externalized, `createIntakeListingDraftAction` MUST fail
-    // closed in supabase mode rather than letting the chat intake
-    // service write a listing row into localStorage while the
-    // intake session lives in Supabase.
-    //
-    // Pre-load the supabase writer with mocks that, IF the action
-    // mistakenly ran the service, would let the call succeed. We
-    // expect NONE of these to fire because the split-brain guard
-    // returns before the service runs.
+  it("createIntakeListingDraftAction dispatches BOTH writers to Supabase (PR 5E full-dispatch)", async () => {
+    // PR 5E. The split-brain guard is gone: in supabase mode + a
+    // supabase-sourced seller actor, the chat intake service now
+    // routes the intake side through `supabaseIntakeWriter` AND
+    // the listing-draft side through `supabaseListingDraftWriter`.
+    // No local persistence touch on either side.
+    const FIXED_LISTING_UUID = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee";
+    mockSupabaseListingDraftWriter.newDraftId.mockReturnValue(
+      FIXED_LISTING_UUID,
+    );
     mockSupabaseWriter.getIntakeSession.mockResolvedValueOnce({
       id: SESSION_UUID,
       sellerId: CURRENT_SELLER.id,
@@ -286,45 +305,70 @@ describe("intake server actions — supabase mode + supabase actor (PR 4 dispatc
       },
     ]);
     mockSupabaseWriter.getIntakeExtractionForSession.mockResolvedValueOnce(null);
+    // Read-back after save returns the canonical row at status
+    // "draft". The mock simulates Supabase's write-then-read
+    // round-trip; the writer's saveListingDraft is a vi.fn that
+    // doesn't actually persist, so we hand-shape the read.
+    mockSupabaseListingDraftWriter.getListingIntent.mockResolvedValueOnce({
+      id: FIXED_LISTING_UUID,
+      sellerId: CURRENT_SELLER.id,
+      status: "draft",
+      rawSellerInput: "테라건 미니, 강남역 근처, 하루 9000원.",
+      item: {
+        name: "테라건 미니",
+        category: "massage_gun",
+        estimatedValue: 200000,
+        condition: "lightly_used",
+        components: [],
+      },
+      pricing: { oneDay: 9000, threeDays: 24000, sevenDays: 50000 },
+      verification: {
+        id: "vi_canonical",
+        safetyCode: "A-001",
+        status: "pending",
+        checks: {
+          frontPhoto: false,
+          backPhoto: false,
+          componentsPhoto: false,
+          workingProof: false,
+          safetyCodePhoto: false,
+          privateSerialStored: false,
+        },
+      },
+      createdAt: "2026-04-30T00:00:02.000Z",
+      updatedAt: "2026-04-30T00:00:02.000Z",
+    });
 
     const r = await createIntakeListingDraftAction({ sessionId: SESSION_UUID });
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      expect(r.code).toBe("unsupported");
-      expect(r.message).toBe("supabase_listing_draft_not_yet_wired");
-    }
-    // Critical: the split-brain guard fires BEFORE any intake
-    // read or write. The supabase writer is never touched, so
-    // there is no partial Supabase state to clean up.
-    expect(mockSupabaseWriter.getIntakeSession).not.toHaveBeenCalled();
-    expect(
-      mockSupabaseWriter.listIntakeMessagesForSession,
-    ).not.toHaveBeenCalled();
-    expect(
-      mockSupabaseWriter.getIntakeExtractionForSession,
-    ).not.toHaveBeenCalled();
-    expect(mockSupabaseWriter.saveIntakeSession).not.toHaveBeenCalled();
-    // And no listing row landed in local persistence either —
-    // the action returned before the chat intake service ran.
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    // Listing carries the supabase-format uuid, never `li_*`.
+    expect(r.value.listing.id).toBe(FIXED_LISTING_UUID);
+    expect(r.value.listing.id.startsWith("li_")).toBe(false);
+    // Status is "draft" — never "approved".
+    expect(r.value.listing.status).toBe("draft");
+    expect(r.value.listing.sellerId).toBe(CURRENT_SELLER.id);
+    // Session pointer matches the canonical id.
+    expect(r.value.session.listingIntentId).toBe(FIXED_LISTING_UUID);
+    // Intake-side reads + writes routed to the supabase intake writer.
+    expect(mockSupabaseWriter.getIntakeSession).toHaveBeenCalledWith(
+      SESSION_UUID,
+    );
+    expect(mockSupabaseWriter.listIntakeMessagesForSession).toHaveBeenCalled();
+    expect(mockSupabaseWriter.saveIntakeSession).toHaveBeenCalledTimes(1);
+    // Listing-side reads + writes routed to the supabase listing writer.
+    expect(mockSupabaseListingDraftWriter.newDraftId).toHaveBeenCalledTimes(1);
+    expect(mockSupabaseListingDraftWriter.saveListingDraft).toHaveBeenCalledTimes(
+      1,
+    );
+    expect(mockSupabaseListingDraftWriter.getListingIntent).toHaveBeenCalledWith(
+      FIXED_LISTING_UUID,
+    );
+    // No local persistence touch.
     const localSessions = await getPersistence().listIntakeSessions();
     expect(localSessions).toEqual([]);
-  });
-
-  it("createIntakeListingDraftAction split-brain message is non-secret (no table names / env / SQL / stack)", async () => {
-    const r = await createIntakeListingDraftAction({ sessionId: SESSION_UUID });
-    expect(r.ok).toBe(false);
-    if (!r.ok) {
-      // Korean: "no internal table names / env names / SQL / stack
-      // frames / row payloads in the user-visible message".
-      expect(r.message).not.toMatch(/listing_intake_sessions/);
-      expect(r.message).not.toMatch(/listing_intake_messages/);
-      expect(r.message).not.toMatch(/listing_extractions/);
-      expect(r.message).not.toMatch(/SUPABASE_/);
-      expect(r.message).not.toMatch(/SERVICE_ROLE/);
-      expect(r.message).not.toMatch(/process\.env/);
-      expect(r.message).not.toMatch(/insert into|select from/i);
-      expect(r.message).not.toMatch(/at .+\(/); // no stack frames
-    }
+    const localListings = await getPersistence().listListingIntents();
+    expect(localListings).toEqual([]);
   });
 
   it("does NOT call the supabase writer when actor is mock-sourced (gate refuses earlier)", async () => {
