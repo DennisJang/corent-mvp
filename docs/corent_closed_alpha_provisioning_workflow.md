@@ -151,7 +151,7 @@ this out explicitly.
 | Auto-create on first login or first action | not added; explicitly forbidden |
 | RLS policies on `profiles` / `seller_profiles` / `borrower_profiles` | not added; deny-by-default RLS stays |
 | Schema migrations | not added |
-| Runtime flip — `SHARED_SERVER_MODE` in `chatIntakeClient.ts` | not flipped |
+| Visible chat intake runtime mode (chat intake client adapter) | not flipped |
 | Remote apply against `corent-dev` | not run; founder-only |
 | Changes to `supabase/seed.sql` / `supabase/seeds/` | none; those paths are intentionally avoided |
 
@@ -174,12 +174,20 @@ end-to-end in supabase mode + supabase actor. See
 and
 [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](corent_closed_alpha_listing_draft_externalization_note.md).
 
-The remaining slice is the **visible client adapter flip**
-(`SHARED_SERVER_MODE` in `chatIntakeClient.ts` → runtime probe /
-per-session opt-in cookie / founder-controlled gate). Until that
-lands, the visible browser chat intake stays on local persistence
-even though every server-side prerequisite is in place — exactly
-the fail-closed posture the pre-revenue beta plan requires.
+PR 5F **landed**: a controlled visible bridge to the server-backed
+chat intake path. The chat intake client adapter calls a server
+probe at mount; the visible browser path stays on local persistence
+until the probe says the current session is a supabase-authenticated,
+founder-provisioned seller. No silent local fallback after server
+mode is selected. Local demo behavior is preserved as the default.
+See [`docs/corent_closed_alpha_chat_intake_client_mode_note.md`](corent_closed_alpha_chat_intake_client_mode_note.md).
+
+Subsequent slices (PR 5G or later) externalize the dashboard
+listings table read path so a server-backed draft becomes visible
+in the seller's "내 리스팅" surface — until then, PR 5F's
+disclaimer tells the user the listings table is still local. The
+overall fail-closed posture the pre-revenue beta plan requires is
+preserved.
 
 ## References
 

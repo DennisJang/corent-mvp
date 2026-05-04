@@ -181,16 +181,59 @@ describe("SSR auth module boundary", () => {
     expect(src).not.toContain('action="/admin/auth/sign-in"');
   });
 
-  it("PR 5C did not flip the visible chat intake runtime — SHARED_SERVER_MODE stays false", () => {
-    // The closed-alpha decision: PR 5C adds the auth entry path
-    // only. The visible chat intake demo continues to use local
-    // persistence. If a future edit flips this constant, the
-    // chat intake UI starts depending on a server-side path that
-    // PR 5C deliberately did NOT wire up.
+  it("client chat intake adapter defaults to local mode (PR 5F invariant)", () => {
+    // Slice A PR 5F replaced the static `SHARED_SERVER_MODE`
+    // constant with a probe-driven `activeMode` that defaults to
+    // `"local"`. The visible browser chat intake demo continues
+    // to use local persistence until the server-side probe
+    // returns `mode: "server"`. This guard asserts:
+    //   1. The default `activeMode` initializer is `"local"`.
+    //   2. The legacy `SHARED_SERVER_MODE` constant is gone (so a
+    //      future search-and-replace cannot accidentally re-add
+    //      a hardcoded server flag without touching this file).
+    //   3. The adapter wires the probe via `probeChatIntakeMode`
+    //      (the only legitimate path to flip `activeMode`).
     const file = join(SRC_ROOT, "lib", "client", "chatIntakeClient.ts");
     const src = readRel(file);
-    expect(src).toContain("const SHARED_SERVER_MODE = false");
-    expect(src).not.toContain("const SHARED_SERVER_MODE = true");
+    expect(src).toContain('let activeMode: ActiveMode = "local"');
+    expect(src).not.toContain("const SHARED_SERVER_MODE");
+    expect(src).toContain("probeChatIntakeMode");
+  });
+
+  it("client chat intake adapter never imports @/server/backend/mode (boundary preserved)", () => {
+    // PR 5F: the mode decision lives entirely server-side, in the
+    // probe action. The client adapter must not reach for the
+    // `getBackendMode` helper directly — that would let the
+    // browser bundle observe the env-driven decision instead of
+    // the auth-bound probe result.
+    const file = join(SRC_ROOT, "lib", "client", "chatIntakeClient.ts");
+    const src = readRel(file);
+    expect(src).not.toContain("@/server/backend/mode");
+    expect(src).not.toContain("getBackendMode");
+  });
+
+  it("ChatToListingIntakeCard contains both 로컬 도우미 and 서버 연결됨 · 베타 copy (transparency surface)", () => {
+    // PR 5F transparency surface — the card must render distinct
+    // copy for local vs server mode. A future edit that removes
+    // either label silently re-introduces the "is this local or
+    // server?" ambiguity.
+    const file = join(SRC_ROOT, "components", "ChatToListingIntakeCard.tsx");
+    const src = readRel(file);
+    expect(src).toContain("로컬 도우미");
+    expect(src).toContain("서버 연결됨 · 베타");
+  });
+
+  it("SellerDashboard server-mode listings disclaimer is present (PR 5F transparency)", () => {
+    // The dashboard's listings table is still local-only after
+    // PR 5F; the disclaimer tells the seller their just-saved
+    // server draft will not appear in this table yet. Removing
+    // the disclaimer without externalizing the listings read
+    // path would be a transparency regression.
+    const file = join(SRC_ROOT, "components", "SellerDashboard.tsx");
+    const src = readRel(file);
+    expect(src).toContain(
+      "이 화면의 리스팅 목록은 아직 로컬 데모예요. 서버에 저장한 초안은 다음",
+    );
   });
 
   // Slice A PR 5E — listing-draft writer boundary.

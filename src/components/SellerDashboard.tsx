@@ -94,6 +94,16 @@ export function SellerDashboard() {
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<string | null>(null);
+  // PR 5F — observable chat-intake mode signal. The chat card
+  // probes the server-side mode at mount and reports the result
+  // back here so the dashboard can render a transparency
+  // disclaimer above the listings table when the chat path has
+  // moved server-side. The listings table itself is still local;
+  // its externalization is a later slice. Default `local` keeps
+  // the existing disclaimer-free layout.
+  const [chatIntakeMode, setChatIntakeMode] = useState<"local" | "server">(
+    "local",
+  );
 
   // Mock-only session. Real per-user authentication is documented in
   // docs/mvp_security_guardrails.md §1; this constant is the migration
@@ -578,6 +588,7 @@ export function SellerDashboard() {
             onDraftCreated={() => {
               void refresh();
             }}
+            onModeChange={setChatIntakeMode}
           />
         </div>
       </section>
@@ -623,6 +634,15 @@ export function SellerDashboard() {
               {LISTED_ITEMS.length + listings.length} items
             </span>
           </div>
+          {chatIntakeMode === "server" ? (
+            <p
+              role="status"
+              className="text-small border border-dashed border-[color:var(--line-dashed)] px-3 py-2 mb-6"
+            >
+              이 화면의 리스팅 목록은 아직 로컬 데모예요. 서버에 저장한 초안은 다음
+              단계에서 보여 드려요.
+            </p>
+          ) : null}
           <div className="overflow-x-auto">
             <table className="w-full text-left">
               <thead>

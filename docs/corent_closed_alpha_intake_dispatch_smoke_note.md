@@ -97,7 +97,7 @@ and `not_found` (target row missing).
 
 | Concern | Status |
 | --- | --- |
-| `SHARED_SERVER_MODE` flip in `chatIntakeClient.ts` | **Not flipped.** Asserted by test. |
+| Visible chat intake client adapter mode | **Not flipped.** PR 5D's posture; the controlled visible bridge later landed in PR 5F (probe-driven, default-local, no silent fallback). |
 | Visible `ChatToListingIntakeCard` switching to server actions | **Not switched.** |
 | Default same-browser demo behavior | **Unchanged.** Local writer + local listing service. |
 | Listing draft externalization (Supabase listing repo write path through the chat intake service) | **Not done.** PR 5E or later. |

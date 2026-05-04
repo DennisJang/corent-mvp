@@ -114,7 +114,7 @@ the dispatchers.
 
 | Concern | Status |
 | --- | --- |
-| `SHARED_SERVER_MODE` flip in `chatIntakeClient.ts` | **Not flipped.** Asserted by test. |
+| Visible chat intake client adapter mode | **Not flipped in PR 5E.** The controlled visible bridge landed in PR 5F (probe-driven, default-local, no silent fallback). |
 | Visible `ChatToListingIntakeCard` switching to server actions | **Not switched.** |
 | Public listing publication | **Not added.** Persisted Supabase listings stay at `status='draft'`; `publicListingService` continues to require `'approved'`. |
 | RLS policy changes | **None.** Deny-by-default RLS stays. |
@@ -127,13 +127,17 @@ the dispatchers.
 
 ## What lands next
 
-The visible client adapter flip — `SHARED_SERVER_MODE` in
+PR 5F **landed**: the controlled visible client bridge.
 [`src/lib/client/chatIntakeClient.ts`](../src/lib/client/chatIntakeClient.ts)
-or its replacement (per-session opt-in cookie / runtime probe /
-founder-controlled gate) — is the only remaining server-side
-prerequisite for the chat intake dispatch to go live in the
-visible browser surface. PR 5E completed the server-action
-plumbing for that flip; the flip itself remains a separate slice.
+calls a server-side probe at mount and routes to either the
+local same-browser demo or the server-backed actions based on
+the probe result. Local demo behavior is the default; no silent
+local fallback after server mode is selected. See
+[`docs/corent_closed_alpha_chat_intake_client_mode_note.md`](corent_closed_alpha_chat_intake_client_mode_note.md).
+
+The next slice (PR 5G or later) externalizes the seller
+dashboard listings table read path so a server-backed draft
+becomes visible in the seller's own surface.
 
 ## References
 

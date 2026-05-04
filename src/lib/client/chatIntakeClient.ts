@@ -1,39 +1,39 @@
 // Client-side adapter for chat-to-listing intake.
 //
+// Slice A PR 5F replaced the static `SHARED_SERVER_MODE` flag with a
+// **server-side mode probe**. The browser chat intake card calls
+// `probeChatIntakeMode()` once at mount; the result becomes the
+// adapter's `activeMode`. Subsequent calls dispatch to either the
+// browser-local `chatListingIntakeService` (the same-browser demo)
+// or the server-backed actions in `@/server/intake/actions`,
+// depending on what the probe returned.
+//
 // Why this seam exists:
 //
 //   - `getPersistence()` returns a `LocalStoragePersistenceAdapter`
 //     in the browser and a `MemoryPersistenceAdapter` on the server.
-//     If the chat intake card called the server actions directly,
-//     intake writes would land in *server* memory while the seller
-//     dashboard's `refresh()` read from *browser* localStorage. The
-//     "초안이 저장됐어요" toast would fire while the dashboard rows
-//     stayed empty — a misleading local demo.
-//   - The boundary fix is to route the local demo through the
-//     existing browser-local `chatListingIntakeService`, while the
-//     server actions remain the future shared-server write path.
-//   - This adapter is the *only* place that decides which mode to
-//     use. The component never imports the server actions directly;
-//     the future flip from local-mode to shared-server-mode is a
-//     single edit here, not a sweep across every UI surface.
+//     Without this adapter, intake writes would land in *server*
+//     memory while the seller dashboard's `refresh()` read from
+//     *browser* localStorage — a misleading "draft saved" toast.
+//   - The server-backed dispatch path (PR 4 + PR 5D + PR 5E) is
+//     fully implemented but only safe to call when the user is a
+//     supabase-authenticated, founder-provisioned seller. The probe
+//     decides; the client never tries to determine this on its own.
 //
-// Local-mode rules:
+// Hard rules:
 //
-//   - Actor identity is resolved from the mock seller session in
-//     this adapter, not in the component. The component cannot
-//     pass `actorSellerId`.
-//   - Errors map to the same `IntentResult` shape the server actions
-//     return, so the component branches on `code` regardless of
-//     mode.
-//
-// Shared-server mode (future):
-//
-//   - When CoRent ships shared persistence + auth, `localMode` flips
-//     to false and each function delegates to the corresponding
-//     `@/server/intake/actions` action. The action contract is
-//     already designed for this — no payload shape change is
-//     needed. See `src/server/intake/actions.ts` and the related
-//     tests.
+//   - Default to `local`. Until the probe resolves, the adapter
+//     stays in `local` mode so a pre-probe call cannot accidentally
+//     hit the server path.
+//   - **No silent fallback** in `server` mode. If a server action
+//     returns a typed failure or throws, the client surfaces the
+//     typed error. The local service is NOT called as a backup.
+//     A "saved" toast must mean what it says.
+//   - The probe failure path defaults to `local` ONLY before any
+//     write — that's the one acceptable fallback semantic.
+//   - This module never imports from `@/server/backend/**` or
+//     `@/server/persistence/**`. The mode decision lives entirely
+//     inside the server-action probe.
 
 "use client";
 
@@ -43,6 +43,15 @@ import {
   ChatIntakeInputError,
   chatListingIntakeService,
 } from "@/lib/services/chatListingIntakeService";
+import {
+  getChatIntakeModeAction,
+  type ChatIntakeModeResult,
+} from "@/server/intake/getChatIntakeMode";
+import {
+  appendIntakeSellerMessageAction,
+  createIntakeListingDraftAction,
+  startIntakeSessionAction,
+} from "@/server/intake/actions";
 
 // Re-export the typed-result shape so the UI never imports from
 // `@/server/**` directly. The shape is identical to
@@ -54,6 +63,7 @@ export type IntentErrorCode =
   | "input"
   | "not_found"
   | "conflict"
+  | "unsupported"
   | "internal";
 
 export type IntentResult<T> =
@@ -67,24 +77,65 @@ function err<T = never>(code: IntentErrorCode, message: string): IntentResult<T>
   return { ok: false, code, message };
 }
 
-// LOCAL-DEMO-MODE-FLAG. Today CoRent runs entirely in one browser
-// profile; the chat intake writes belong in browser localStorage so
-// the seller dashboard sees them. When shared persistence + auth
-// land, this flag flips to false and each helper below delegates to
-// `@/server/intake/actions`. Until then, the server actions stay
-// available (and tested) but are not on the demo path.
-const SHARED_SERVER_MODE = false;
+// --------------------------------------------------------------
+// Mode state.
+//
+// `activeMode` is the cached probe result. Default is `"local"`
+// — every adapter call before a successful probe routes to the
+// local service. The probe can transition this to `"server"` only
+// once, and only via `probeChatIntakeMode()`.
+//
+// `_resetChatIntakeModeForTests` is the test seam. Production code
+// must not import it.
+// --------------------------------------------------------------
+
+type ActiveMode = "local" | "server";
+
+// Module-level cache. `activeMode` decides which dispatch path
+// every call below takes. The component reads `capability` from
+// the probe's return value, not from this module — capability is a
+// UI hint, not a dispatch signal, and storing it here would create
+// a redundant cache to keep in sync.
+let activeMode: ActiveMode = "local";
+let probeResolved: Promise<ChatIntakeModeResult> | null = null;
+
+export function _resetChatIntakeModeForTests(): void {
+  activeMode = "local";
+  probeResolved = null;
+}
+
+// Single-flight probe. Concurrent callers awaiting the probe see
+// the same in-flight Promise; subsequent callers see the cached
+// result. On any throw the adapter stays in `"local"` mode so the
+// component still renders a working UI.
+export async function probeChatIntakeMode(): Promise<ChatIntakeModeResult> {
+  if (probeResolved) return probeResolved;
+  probeResolved = (async () => {
+    try {
+      const result = await getChatIntakeModeAction();
+      activeMode = result.mode === "server" ? "server" : "local";
+      return result;
+    } catch {
+      // Probe-failure fallback — applies BEFORE any data is
+      // written. Safe because the adapter has not yet committed
+      // to the server path. After a successful probe, server-mode
+      // failures DO NOT fall back here.
+      activeMode = "local";
+      return { mode: "local" } as ChatIntakeModeResult;
+    }
+  })();
+  return probeResolved;
+}
 
 function resolveLocalSellerId(): string | null {
-  // The mock session is the local-mode actor source. When the demo
-  // flips to shared-server mode, this branch goes away entirely;
-  // the server resolver (`resolveServerActor`) becomes the single
-  // identity seam.
+  // The mock session is the local-mode actor source. Server mode
+  // resolves the actor server-side via `resolveServerActor`; the
+  // server actions never trust a client-supplied seller id.
   const session = getMockSellerSession();
   return session?.sellerId ?? null;
 }
 
-function mapError<T>(e: unknown): IntentResult<T> {
+function mapLocalError<T>(e: unknown): IntentResult<T> {
   if (e instanceof OwnershipError) {
     return err("ownership", "actor cannot access this intake session");
   }
@@ -100,6 +151,14 @@ function mapError<T>(e: unknown): IntentResult<T> {
     }
   }
   return err("internal", "chat_intake_failed");
+}
+
+// In server mode an action throw is wrapped to the same typed
+// shape, but we DO NOT call the local service afterwards. The
+// envelope tells the user the server attempt failed; nothing was
+// saved locally as a side-effect.
+function mapServerThrow<T>(): IntentResult<T> {
+  return err("internal", "chat_intake_server_failed");
 }
 
 // --------------------------------------------------------------
@@ -121,11 +180,15 @@ export type CreateListingDraftResult = Awaited<
 export async function startIntakeSession(): Promise<
   IntentResult<StartIntakeSessionResult>
 > {
-  if (SHARED_SERVER_MODE) {
-    // FUTURE: replace with `await startIntakeSessionAction()` from
-    // `@/server/intake/actions`. The action contract already
-    // matches this signature.
-    return err("internal", "shared_server_mode_not_wired");
+  if (activeMode === "server") {
+    try {
+      const result = await startIntakeSessionAction();
+      // Server action returns IntentResult<StartIntakeSessionResult>
+      // already; pass through unchanged.
+      return result as IntentResult<StartIntakeSessionResult>;
+    } catch {
+      return mapServerThrow<StartIntakeSessionResult>();
+    }
   }
   const sellerId = resolveLocalSellerId();
   if (!sellerId) return err("unauthenticated", "no actor");
@@ -133,7 +196,7 @@ export async function startIntakeSession(): Promise<
     const session = await chatListingIntakeService.startSession(sellerId);
     return ok({ session });
   } catch (e) {
-    return mapError(e);
+    return mapLocalError(e);
   }
 }
 
@@ -141,17 +204,25 @@ export async function appendSellerMessage(payload: {
   sessionId: string;
   content: string;
 }): Promise<IntentResult<AppendSellerMessageResult>> {
-  if (SHARED_SERVER_MODE) {
-    return err("internal", "shared_server_mode_not_wired");
-  }
-  const sellerId = resolveLocalSellerId();
-  if (!sellerId) return err("unauthenticated", "no actor");
   if (typeof payload.sessionId !== "string" || payload.sessionId.length === 0) {
     return err("input", "sessionId required");
   }
   if (typeof payload.content !== "string") {
     return err("input", "content required");
   }
+  if (activeMode === "server") {
+    try {
+      const result = await appendIntakeSellerMessageAction({
+        sessionId: payload.sessionId,
+        content: payload.content,
+      });
+      return result as IntentResult<AppendSellerMessageResult>;
+    } catch {
+      return mapServerThrow<AppendSellerMessageResult>();
+    }
+  }
+  const sellerId = resolveLocalSellerId();
+  if (!sellerId) return err("unauthenticated", "no actor");
   try {
     const result = await chatListingIntakeService.appendSellerMessage(
       payload.sessionId,
@@ -160,21 +231,28 @@ export async function appendSellerMessage(payload: {
     );
     return ok(result);
   } catch (e) {
-    return mapError(e);
+    return mapLocalError(e);
   }
 }
 
 export async function createListingDraft(payload: {
   sessionId: string;
 }): Promise<IntentResult<CreateListingDraftResult>> {
-  if (SHARED_SERVER_MODE) {
-    return err("internal", "shared_server_mode_not_wired");
-  }
-  const sellerId = resolveLocalSellerId();
-  if (!sellerId) return err("unauthenticated", "no actor");
   if (typeof payload.sessionId !== "string" || payload.sessionId.length === 0) {
     return err("input", "sessionId required");
   }
+  if (activeMode === "server") {
+    try {
+      const result = await createIntakeListingDraftAction({
+        sessionId: payload.sessionId,
+      });
+      return result as IntentResult<CreateListingDraftResult>;
+    } catch {
+      return mapServerThrow<CreateListingDraftResult>();
+    }
+  }
+  const sellerId = resolveLocalSellerId();
+  if (!sellerId) return err("unauthenticated", "no actor");
   try {
     const result =
       await chatListingIntakeService.createListingDraftFromIntake(
@@ -183,6 +261,6 @@ export async function createListingDraft(payload: {
       );
     return ok(result);
   } catch (e) {
-    return mapError(e);
+    return mapLocalError(e);
   }
 }

@@ -241,6 +241,10 @@ describe("closed-alpha provisioning doc — load-bearing claims present", () => 
     const src = readFileSync(PROVISIONING_DOC, "utf8");
     expect(src).toMatch(/Seller \/ renter sign-in routes.*not added/i);
     expect(src).toMatch(/RLS polic(?:y|ies).*not added/i);
-    expect(src).toMatch(/SHARED_SERVER_MODE.*not flipped/i);
+    // Earlier PR 5B/5C/5D/5E referred to the runtime flip by the
+    // legacy `SHARED_SERVER_MODE` constant name. PR 5F replaced
+    // that constant with a probe-driven `activeMode`; the doc
+    // assertion now matches the durable phrasing instead.
+    expect(src).toMatch(/chat intake.*runtime.*not flipped/i);
   });
 });

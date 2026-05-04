@@ -107,24 +107,27 @@ remains PR 5D.
 
 ## What lands next
 
-PR 5D and PR 5E both **landed**:
+PR 5D, PR 5E, and PR 5F all **landed**:
 
 - **PR 5D** — server-backed intake dispatch smoke + temporary
   split-brain guard. See
   [`docs/corent_closed_alpha_intake_dispatch_smoke_note.md`](corent_closed_alpha_intake_dispatch_smoke_note.md).
 - **PR 5E** — listing draft externalization via
-  `ListingDraftWriter`. PR 5D's `unsupported` guard is removed;
-  `createIntakeListingDraftAction` now completes end-to-end in
-  supabase mode + supabase actor. See
+  `ListingDraftWriter`. PR 5D's `unsupported` guard is removed.
+  See
   [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](corent_closed_alpha_listing_draft_externalization_note.md).
+- **PR 5F** — controlled visible client bridge. The chat intake
+  card calls a server-side probe at mount and routes to either
+  the local same-browser demo or the server-backed actions based
+  on the probe result. Local demo is the default; no silent
+  local fallback after server mode is selected. See
+  [`docs/corent_closed_alpha_chat_intake_client_mode_note.md`](corent_closed_alpha_chat_intake_client_mode_note.md).
 
-The only remaining slice is the **visible client adapter flip** —
-replacing `SHARED_SERVER_MODE` in
-[`src/lib/client/chatIntakeClient.ts`](../src/lib/client/chatIntakeClient.ts)
-with a runtime probe / per-session opt-in cookie /
-founder-controlled gate. Until that lands, the visible browser
-chat intake stays on the local-persistence demo path even though
-every server-side prerequisite is now in place.
+The next slice (PR 5G or later) is the seller dashboard
+listings table read-path externalization, so server-backed
+drafts become visible in "내 리스팅". Until that lands, PR 5F's
+calm dashboard disclaimer tells the seller the listings table
+is still local.
 
 ## References
 

@@ -511,7 +511,7 @@ service's existing try/catch surfaces it via the runner's
   Supabase client. The test also asserts the mock-actor + supabase
   combination never reaches the writer.
 
-### PR 5 prerequisites (PR 5A + 5B + 5C + 5D + 5E landed — server-side path complete)
+### PR 5 prerequisites (PR 5A + 5B + 5C + 5D + 5E + 5F landed — controlled visible bridge in place)
 
 PR 5 is the auth + dispatch-flip slice. PR 5A landed the
 **closed-alpha actor resolution** prerequisite. PR 5B added the
@@ -519,15 +519,15 @@ PR 5 is the auth + dispatch-flip slice. PR 5A landed the
 template. PR 5C added the **closed-alpha CoRent user sign-in
 entry path** (one shared, non-admin Supabase Auth magic-link
 flow). PR 5D added the **server-backed intake dispatch smoke**
-plus a temporary **listing-draft split-brain guard** (createDraft
-returned `unsupported` in supabase mode until listing draft
-persistence was externalized). PR 5E **externalized listing
-draft persistence** through a sibling `ListingDraftWriter` seam
-that mirrors the `IntakeWriter` dispatcher decision; both
-writers route to Supabase together in supabase mode + supabase
-actor, eliminating the split-brain hole and removing the PR 5D
-guard. The only remaining item is the **visible client adapter
-flip** (a separate later slice).
+plus a temporary **listing-draft split-brain guard**. PR 5E
+**externalized listing draft persistence** and removed the
+PR 5D guard. PR 5F **added a controlled visible bridge**: the
+chat intake card calls a server-side probe at mount and
+dispatches to either the local same-browser demo or the
+server-backed actions based on the result; local demo behavior
+is the default; no silent local fallback after server mode is
+selected. The next slice (PR 5G or later) is the dashboard
+listings read-path externalization.
 
 1. ✅ **Closed-alpha CoRent user sign-in / callback route** —
    landed in PR 5C. New routes at
@@ -585,20 +585,34 @@ flip** (a separate later slice).
    guard). PR 5D's `unsupported` guard is removed; createDraft
    in supabase mode now succeeds end-to-end. See
    [`docs/corent_closed_alpha_listing_draft_externalization_note.md`](./corent_closed_alpha_listing_draft_externalization_note.md).
-6. **Visible client adapter flip** — replace `SHARED_SERVER_MODE`
-   in `chatIntakeClient.ts` with a runtime probe / per-session
-   opt-in cookie / founder-controlled gate so the visible chat
-   intake UI starts talking to the server-backed dispatcher for
-   opted-in sessions. *Tracked as PR 5F or later.* Not in PR 5A–5E.
+6. ✅ **Controlled visible client bridge** — landed in PR 5F.
+   New server-side probe action
+   ([`src/server/intake/getChatIntakeMode.ts`](../src/server/intake/getChatIntakeMode.ts))
+   returns `{ mode: "local" }` by default and
+   `{ mode: "server", capability: "seller" | "renter" }` only
+   when the session resolves to a supabase-authenticated actor
+   in supabase backend mode. The chat intake client adapter
+   ([`src/lib/client/chatIntakeClient.ts`](../src/lib/client/chatIntakeClient.ts))
+   replaced the static `SHARED_SERVER_MODE` constant with a
+   probe-driven `activeMode` that defaults to `"local"`. The
+   chat card and the seller dashboard render distinct
+   transparency copy for each mode; the dashboard's listings
+   table read path is unchanged (still local) and a calm
+   disclaimer tells the seller their server-saved drafts will
+   not appear there yet. **No silent local fallback** after
+   server mode is selected. See
+   [`docs/corent_closed_alpha_chat_intake_client_mode_note.md`](./corent_closed_alpha_chat_intake_client_mode_note.md).
+7. **Dashboard listings externalization** — externalize the
+   seller dashboard's "내 리스팅" listings read path so a
+   server-backed draft becomes visible in the seller's own
+   surface. *Tracked as PR 5G or later.* Not in PR 5A–5F.
 
-Once item 6 lands, PR 4's dispatcher seam goes live in the
-visible browser surface for opted-in sessions. PR 5A's resolver
-fulfills the auth-bound `source: "supabase"` actor contract,
-PR 5B's manual workflow seeds the profile / capability rows it
-reads, PR 5C lets a tester establish the auth session, and
-PR 5D + 5E together prove the full server-side dispatch path
-(start, append, AND createDraft) under
-`CORENT_BACKEND_MODE=supabase` with no split-brain possibility.
+Once item 7 lands, the chat intake → listings round-trip is
+fully visible in server mode and PR 5F's listings disclaimer
+can be removed. PR 5A's resolver, PR 5B's manual workflow,
+PR 5C's sign-in route, PR 5D + 5E's full server-side dispatch,
+and PR 5F's controlled client bridge together complete the
+chat intake server-backed surface for closed-alpha testers.
 
 ### Related executable contracts (must continue to pass)
 
