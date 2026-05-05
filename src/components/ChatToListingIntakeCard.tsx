@@ -118,10 +118,19 @@ export function ChatToListingIntakeCard({ onDraftCreated, onModeChange }: Props)
   // Defaults are `local` / null so the card renders the existing
   // local-demo affordance until the probe resolves. The probe is a
   // single-flight request memoized inside the client adapter.
+  //
+  // Leakage guard (post-2026-05-05 smoke): until the probe resolves
+  // we treat the surface as "확인 중" — the submit + draft buttons
+  // are disabled and the badge does not claim 로컬 도우미. Without
+  // this guard, a closed-alpha tester clicking during the probe
+  // window would dispatch through the client adapter while
+  // `activeMode` was still its default `"local"`, silently routing
+  // a Supabase-mode write into browser localStorage.
   const [mode, setMode] = useState<"local" | "server">("local");
   const [capability, setCapability] = useState<"seller" | "renter" | null>(
     null,
   );
+  const [probePending, setProbePending] = useState(true);
 
   useEffect(() => {
     let cancelled = false;
@@ -136,6 +145,7 @@ export function ChatToListingIntakeCard({ onDraftCreated, onModeChange }: Props)
         setCapability(null);
         onModeChange?.("local");
       }
+      setProbePending(false);
     });
     return () => {
       cancelled = true;
@@ -215,7 +225,9 @@ export function ChatToListingIntakeCard({ onDraftCreated, onModeChange }: Props)
     <section className="bg-white border border-[color:var(--ink-12)]">
       <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
         <h3 className="text-title">채팅으로 물건 등록 (베타)</h3>
-        {mode === "server" ? (
+        {probePending ? (
+          <Badge variant="dashed">베타 모드 확인 중</Badge>
+        ) : mode === "server" ? (
           <Badge variant="outline">서버 연결됨 · 베타</Badge>
         ) : (
           <Badge variant="dashed">로컬 도우미</Badge>
@@ -261,11 +273,12 @@ export function ChatToListingIntakeCard({ onDraftCreated, onModeChange }: Props)
               busy ||
               draftFinalized ||
               text.trim().length === 0 ||
-              submitDisabledByCapability
+              submitDisabledByCapability ||
+              probePending
             }
             type="button"
           >
-            초안 미리보기
+            {probePending ? "확인 중…" : "초안 미리보기"}
           </Button>
         </div>
 
@@ -291,7 +304,7 @@ export function ChatToListingIntakeCard({ onDraftCreated, onModeChange }: Props)
               size="md"
               variant="secondary"
               onClick={handleCreateDraft}
-              disabled={busy || submitDisabledByCapability}
+              disabled={busy || submitDisabledByCapability || probePending}
               type="button"
             >
               리스팅 초안으로 저장
