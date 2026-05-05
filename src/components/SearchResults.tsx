@@ -11,6 +11,7 @@ import { CATEGORIES, CATEGORY_LABEL } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
 import type { PublicListing } from "@/domain/listings";
 import { PRODUCTS } from "@/data/products";
+import { loadPublicListings } from "@/lib/client/publicListingsClient";
 import { publicListingService } from "@/lib/services/publicListingService";
 import { searchService } from "@/lib/services/searchService";
 import { formatKRW } from "@/lib/format";
@@ -36,9 +37,9 @@ export function SearchResults() {
 
   // Phase 1.12: read public listings via the projection layer.
   // Initial paint uses the static-product projections so SSR /
-  // first render is stable; the effect below re-fetches via
-  // `listPublicListings()` so any approved persisted listings
-  // become visible after hydration.
+  // first render is stable; the effect below probes the server for
+  // backend-mode dispatch (Bundle 2 Slice 1) and falls back to the
+  // existing local path in mock mode.
   const initialListings = useMemo<PublicListing[]>(
     () =>
       PRODUCTS.map((p) => ({
@@ -63,9 +64,35 @@ export function SearchResults() {
   const [listings, setListings] =
     useState<PublicListing[]>(initialListings);
 
+  // Bundle 2 Slice 1: backend-mode dispatch.
+  //
+  //   - `kind: "local"`  → existing isomorphic path (static
+  //     `PRODUCTS` + any localStorage-persisted approved
+  //     `ListingIntent` rows).
+  //   - `kind: "server"` → server-projected approved listings only.
+  //     Static `PRODUCTS` are NOT mixed in: they are not
+  //     server-requestable, so surfacing them in supabase mode
+  //     would mislead the closed-alpha tester.
+  //   - `kind: "error"`  → keep the SSR initial paint (static
+  //     `PRODUCTS` only). No silent fallback to local data —
+  //     that would be the exact "present local data as server
+  //     data" failure the slice forbids.
   useEffect(() => {
     let cancelled = false;
-    publicListingService.listPublicListings().then((all) => {
+    void loadPublicListings().then(async (probe) => {
+      if (cancelled) return;
+      if (probe.kind === "server") {
+        setListings(probe.listings);
+        return;
+      }
+      if (probe.kind === "error") {
+        // Keep `initialListings`. The renter sees the static
+        // demo products with no implication that server data
+        // landed.
+        return;
+      }
+      // probe.kind === "local"
+      const all = await publicListingService.listPublicListings();
       if (cancelled) return;
       setListings(all);
     });
