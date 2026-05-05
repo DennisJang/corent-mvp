@@ -41,6 +41,12 @@ export {
 } from "./intakeRepository";
 
 export {
+  insertFeedbackSubmission,
+  type InsertFeedbackInput,
+  type InsertFeedbackResult,
+} from "./feedbackRepository";
+
+export {
   readMarketplaceAggregates,
   type MarketplaceAggregates,
   type DbHealth,

@@ -1,5 +1,6 @@
 import { PageShell } from "@/components/PageShell";
 import { Button } from "@/components/Button";
+import { FeedbackIntakeCard } from "@/components/FeedbackIntakeCard";
 import { ProductCard } from "@/components/ProductCard";
 import { AISearchInput } from "@/components/AISearchInput";
 import { PRODUCTS } from "@/data/products";
@@ -215,6 +216,29 @@ export default function LandingPage() {
                   <span className="text-h3 tracking-tight">서울 직거래</span>
                 </div>
               </div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      {/* Closed-alpha feedback / wishlist intake */}
+      <section className="border-t border-black">
+        <div className="container-main py-24">
+          <div className="grid-12 items-start gap-y-12">
+            <div className="col-span-12 md:col-span-5 flex flex-col gap-6">
+              <span className="text-caption">Validation Loop</span>
+              <h2 className="text-h2">
+                어떤 물건을
+                <br />
+                며칠 써보고 싶으세요?
+              </h2>
+              <p className="text-body text-[color:var(--ink-60)] max-w-[400px]">
+                CoRent는 사람들이 무엇을 사기 전에 며칠 써보고 싶은지를
+                같이 알아보는 중이에요. 한 줄 메모도 도움이 돼요.
+              </p>
+            </div>
+            <div className="col-span-12 md:col-span-7">
+              <FeedbackIntakeCard sourcePage="/" />
             </div>
           </div>
         </div>

@@ -399,3 +399,122 @@ export function validateOptionalCategory(
   if (s === null || s === undefined) return { ok: true, value: null };
   return validateCategory(s) as ValidationResult<CategoryId | null>;
 }
+
+// --------------------------------------------------------------
+// Feedback intake validators (Validation Bundle 1, Part 2)
+//
+// Mirror the SQL CHECK constraints + enum sets defined in
+// `supabase/migrations/20260504120000_phase2_feedback_intake.sql`.
+// The application-level cap is intentionally identical so a forged
+// caller is rejected at the validator boundary before any DB call.
+// --------------------------------------------------------------
+
+export type FeedbackKind =
+  | "wanted_item"
+  | "can_lend_item"
+  | "feature_request"
+  | "bug"
+  | "general";
+
+export type FeedbackStatus = "new" | "reviewed" | "archived";
+
+const FEEDBACK_KINDS: ReadonlySet<FeedbackKind> = new Set<FeedbackKind>([
+  "wanted_item",
+  "can_lend_item",
+  "feature_request",
+  "bug",
+  "general",
+]);
+
+const FEEDBACK_STATUSES: ReadonlySet<FeedbackStatus> = new Set<FeedbackStatus>([
+  "new",
+  "reviewed",
+  "archived",
+]);
+
+const FEEDBACK_MESSAGE_MAX = 2000;
+const FEEDBACK_ITEM_NAME_MAX = 80;
+const FEEDBACK_SOURCE_PAGE_MAX = 80;
+const FEEDBACK_EMAIL_MIN = 3;
+const FEEDBACK_EMAIL_MAX = 254;
+
+// Tolerant email shape check. The DB column is text and accepts any
+// string within length bounds; the application layer just rejects
+// trivially malformed values before the row hits the table. We do
+// NOT do full RFC 5321 validation — that's brittle and the closed
+// alpha contact email is best-effort.
+const EMAIL_SHAPE_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+
+export function validateFeedbackKind(
+  s: unknown,
+): ValidationResult<FeedbackKind> {
+  if (typeof s !== "string" || !FEEDBACK_KINDS.has(s as FeedbackKind)) {
+    return { ok: false, error: "feedback kind not allowed" };
+  }
+  return { ok: true, value: s as FeedbackKind };
+}
+
+export function validateFeedbackStatus(
+  s: unknown,
+): ValidationResult<FeedbackStatus> {
+  if (typeof s !== "string" || !FEEDBACK_STATUSES.has(s as FeedbackStatus)) {
+    return { ok: false, error: "feedback status not allowed" };
+  }
+  return { ok: true, value: s as FeedbackStatus };
+}
+
+export function validateFeedbackMessage(
+  s: unknown,
+): ValidationResult<string> {
+  const r = validateRequiredText(s, "feedback message", FEEDBACK_MESSAGE_MAX);
+  if (!r.ok) return r;
+  if (r.value.trim().length === 0) {
+    return { ok: false, error: "feedback message required" };
+  }
+  return r;
+}
+
+function validateOptionalFeedbackText(
+  s: unknown,
+  label: string,
+  max: number,
+): ValidationResult<string | null> {
+  if (s === "") return { ok: true, value: null };
+  return validateBoundedText(s, label, max, false);
+}
+
+export function validateFeedbackItemName(
+  s: unknown,
+): ValidationResult<string | null> {
+  return validateOptionalFeedbackText(
+    s,
+    "feedback item_name",
+    FEEDBACK_ITEM_NAME_MAX,
+  );
+}
+
+export function validateFeedbackSourcePage(
+  s: unknown,
+): ValidationResult<string | null> {
+  return validateOptionalFeedbackText(
+    s,
+    "feedback source_page",
+    FEEDBACK_SOURCE_PAGE_MAX,
+  );
+}
+
+export function validateFeedbackContactEmail(
+  s: unknown,
+): ValidationResult<string | null> {
+  if (s === null || s === undefined) return { ok: true, value: null };
+  if (typeof s !== "string") {
+    return { ok: false, error: "contact email must be a string" };
+  }
+  if (s.length < FEEDBACK_EMAIL_MIN || s.length > FEEDBACK_EMAIL_MAX) {
+    return { ok: false, error: "contact email length out of bounds" };
+  }
+  if (!EMAIL_SHAPE_RE.test(s)) {
+    return { ok: false, error: "contact email shape invalid" };
+  }
+  return { ok: true, value: s };
+}
