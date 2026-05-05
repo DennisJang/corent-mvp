@@ -64,6 +64,16 @@ export class IntakeRepoWriteError extends Error {
 }
 
 export const supabaseIntakeWriter: IntakeWriter = {
+  newSessionId(): string {
+    // Phase 2 schema PKs `listing_intake_sessions.id` as `uuid`;
+    // `validateUuid` in the marketplace validators rejects
+    // anything else. Mirrors `supabaseListingDraftWriter.newDraftId`.
+    return crypto.randomUUID();
+  },
+  newMessageId(): string {
+    // Same uuid requirement on `listing_intake_messages.id`.
+    return crypto.randomUUID();
+  },
   async saveIntakeSession(session) {
     const r = await saveIntakeSession(session);
     if (!r.ok) {

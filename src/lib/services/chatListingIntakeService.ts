@@ -29,7 +29,7 @@ import type {
 } from "@/domain/intake";
 import type { ListingIntent } from "@/domain/intents";
 import { OwnershipError } from "@/lib/auth/guards";
-import { generateId, nowIso } from "@/lib/ids";
+import { nowIso } from "@/lib/ids";
 import {
   localIntakeWriter,
   type IntakeWriter,
@@ -134,7 +134,10 @@ export function createChatListingIntakeService(
       }
       const at = nowIso();
       const session: IntakeSession = {
-        id: generateId("isn"),
+        // Id format follows the writer (local: `isn_<16hex>`,
+        // supabase: `crypto.randomUUID()` — required by the Phase 2
+        // schema's uuid PK).
+        id: writer.newSessionId(),
         // Canonical sellerId comes from the actor — never from a caller-
         // supplied field.
         sellerId: actorSellerId,
@@ -208,7 +211,7 @@ export function createChatListingIntakeService(
 
       const at = nowIso();
       const sellerMessage: IntakeMessage = {
-        id: generateId("imsg"),
+        id: writer.newMessageId(),
         sessionId,
         role: "seller",
         content: trimmed,
@@ -224,7 +227,7 @@ export function createChatListingIntakeService(
       await writer.saveIntakeExtraction(extraction);
 
       const assistantMessage: IntakeMessage = {
-        id: generateId("imsg"),
+        id: writer.newMessageId(),
         sessionId,
         role: "assistant",
         content: buildAssistantSummary(extraction),

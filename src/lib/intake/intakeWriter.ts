@@ -37,8 +37,17 @@ import type {
   IntakeSession,
 } from "@/domain/intake";
 import { getPersistence } from "@/lib/adapters/persistence";
+import { generateId } from "@/lib/ids";
 
 export interface IntakeWriter {
+  // Mint a new id for a session / message. The local writer keeps
+  // the existing `isn_<16hex>` / `imsg_<16hex>` shapes; the supabase
+  // writer returns `crypto.randomUUID()` because the Phase 2 schema
+  // requires uuid PKs on `listing_intake_sessions.id` and
+  // `listing_intake_messages.id`. Mirrors
+  // `ListingDraftWriter.newDraftId()`.
+  newSessionId(): string;
+  newMessageId(): string;
   saveIntakeSession(session: IntakeSession): Promise<void>;
   getIntakeSession(id: string): Promise<IntakeSession | null>;
   listIntakeSessions(): Promise<IntakeSession[]>;
@@ -59,6 +68,12 @@ export interface IntakeWriter {
 // `LocalStoragePersistenceAdapter`; in SSR / node tests it returns
 // `MemoryPersistenceAdapter`.
 export const localIntakeWriter: IntakeWriter = {
+  newSessionId(): string {
+    return generateId("isn");
+  },
+  newMessageId(): string {
+    return generateId("imsg");
+  },
   async saveIntakeSession(session) {
     await getPersistence().saveIntakeSession(session);
   },

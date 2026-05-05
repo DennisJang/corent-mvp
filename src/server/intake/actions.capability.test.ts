@@ -44,6 +44,8 @@ vi.mock("@/server/actors/resolveServerActor", async () => {
 
 vi.mock("@/server/intake/supabaseIntakeWriter", () => ({
   supabaseIntakeWriter: {
+    newSessionId: vi.fn(() => "11111111-2222-4333-8444-000000000001"),
+    newMessageId: vi.fn(() => "11111111-2222-4333-8444-000000000002"),
     saveIntakeSession: vi.fn(async () => {}),
     getIntakeSession: vi.fn(async () => null),
     listIntakeSessions: vi.fn(async () => []),
