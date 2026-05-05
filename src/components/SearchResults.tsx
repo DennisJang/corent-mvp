@@ -10,7 +10,6 @@ import { ProductCard } from "@/components/ProductCard";
 import { CATEGORIES, CATEGORY_LABEL } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
 import type { PublicListing } from "@/domain/listings";
-import { PRODUCTS } from "@/data/products";
 import { loadPublicListings } from "@/lib/client/publicListingsClient";
 import { publicListingService } from "@/lib/services/publicListingService";
 import { searchService } from "@/lib/services/searchService";
@@ -35,66 +34,53 @@ export function SearchResults() {
   const durationDays = intent?.durationDays ?? 3;
   const durationKey = durationDaysToKey(durationDays);
 
-  // Phase 1.12: read public listings via the projection layer.
-  // Initial paint uses the static-product projections so SSR /
-  // first render is stable; the effect below probes the server for
-  // backend-mode dispatch (Bundle 2 Slice 1) and falls back to the
-  // existing local path in mock mode.
-  const initialListings = useMemo<PublicListing[]>(
-    () =>
-      PRODUCTS.map((p) => ({
-        publicListingId: `product:${p.id}`,
-        source: "static_product",
-        sourceId: p.id,
-        detailHref: `/items/${p.id}`,
-        sellerId: p.sellerId,
-        sellerName: p.sellerName,
-        title: p.name,
-        category: p.category,
-        summary: p.summary,
-        pickupArea: p.pickupArea,
-        prices: { "1d": p.prices["1d"], "3d": p.prices["3d"], "7d": p.prices["7d"] },
-        estimatedValue: p.estimatedValue,
-        hero: { initials: p.hero.initials },
-        condition: p.condition,
-        isPersistedProjection: false,
-      })),
-    [],
-  );
-  const [listings, setListings] =
-    useState<PublicListing[]>(initialListings);
-
-  // Bundle 2 Slice 1: backend-mode dispatch.
+  // Bundle 2 Slice 1 + post-2026-05-05 leakage guard.
   //
-  //   - `kind: "local"`  → existing isomorphic path (static
-  //     `PRODUCTS` + any localStorage-persisted approved
-  //     `ListingIntent` rows).
-  //   - `kind: "server"` → server-projected approved listings only.
-  //     Static `PRODUCTS` are NOT mixed in: they are not
-  //     server-requestable, so surfacing them in supabase mode
-  //     would mislead the closed-alpha tester.
-  //   - `kind: "error"`  → keep the SSR initial paint (static
-  //     `PRODUCTS` only). No silent fallback to local data —
-  //     that would be the exact "present local data as server
-  //     data" failure the slice forbids.
+  // No static-PRODUCTS initial seed. Before the server probe
+  // resolves the client cannot tell server vs local; seeding
+  // `listings` with static `PRODUCTS` would (a) flash demo cards
+  // in supabase mode and (b) keep those cards on a `kind: "error"`
+  // server response — exactly the "static demo as if server data"
+  // failure the smoke ops checklist §8 lists as a Stop Condition.
+  //
+  // Mode dispatch:
+  //
+  //   - loadState: "loading" → empty list + neutral loading panel
+  //     (covers both pre-probe and the local-path async fetch).
+  //   - probe.kind === "server" → render only server-projected
+  //     approved listings; static `PRODUCTS` are NOT mixed in.
+  //   - probe.kind === "local"  → call
+  //     `publicListingService.listPublicListings()`, the
+  //     isomorphic path that includes static `PRODUCTS` + any
+  //     localStorage-persisted approved listings (the local-mode
+  //     demo behavior is preserved).
+  //   - probe.kind === "error" → empty list + calm error panel.
+  //     Server data was attempted and failed; we do NOT silently
+  //     substitute static demo products.
+  const [listings, setListings] = useState<PublicListing[]>([]);
+  const [loadState, setLoadState] = useState<"loading" | "loaded" | "error">(
+    "loading",
+  );
+
   useEffect(() => {
     let cancelled = false;
     void loadPublicListings().then(async (probe) => {
       if (cancelled) return;
       if (probe.kind === "server") {
         setListings(probe.listings);
+        setLoadState("loaded");
         return;
       }
       if (probe.kind === "error") {
-        // Keep `initialListings`. The renter sees the static
-        // demo products with no implication that server data
-        // landed.
+        setListings([]);
+        setLoadState("error");
         return;
       }
       // probe.kind === "local"
       const all = await publicListingService.listPublicListings();
       if (cancelled) return;
       setListings(all);
+      setLoadState("loaded");
     });
     return () => {
       cancelled = true;
@@ -252,13 +238,27 @@ export function SearchResults() {
 
       <section className="container-main py-16">
         <div className="flex items-baseline justify-between border-b border-black pb-4 mb-12">
-          <span className="text-title">총 {filtered.length}개 결과</span>
+          <span className="text-title">
+            {loadState === "loading"
+              ? "결과를 불러오는 중…"
+              : loadState === "error"
+                ? "결과를 불러오지 못했어요"
+                : `총 ${filtered.length}개 결과`}
+          </span>
           <span className="text-caption text-[color:var(--ink-60)]">
             정렬 / AI 추천순 (모의)
           </span>
         </div>
 
-        {filtered.length === 0 ? (
+        {loadState === "loading" ? (
+          <LoadingResults />
+        ) : loadState === "error" ? (
+          <ErrorResults
+            onRetry={() => {
+              router.replace(`/search`);
+            }}
+          />
+        ) : filtered.length === 0 ? (
           <EmptyResults
             onReset={() => {
               router.replace(`/search`);
@@ -278,6 +278,39 @@ export function SearchResults() {
         )}
       </section>
     </>
+  );
+}
+
+function LoadingResults() {
+  return (
+    <div className="border border-dashed border-[color:var(--line-dashed)] p-12 flex flex-col gap-3">
+      <span className="text-caption text-[color:var(--ink-60)]">Loading</span>
+      <p className="text-body text-[color:var(--ink-60)]">
+        검색 결과를 불러오고 있어요. 잠시만 기다려 주세요.
+      </p>
+    </div>
+  );
+}
+
+function ErrorResults({ onRetry }: { onRetry: () => void }) {
+  return (
+    <div className="border border-dashed border-[color:var(--line-dashed)] p-12 flex flex-col gap-4 items-start">
+      <span className="text-caption text-[color:var(--ink-60)]">
+        Unavailable
+      </span>
+      <h3 className="text-h3">결과를 불러오지 못했어요.</h3>
+      <p className="text-body text-[color:var(--ink-60)] max-w-[480px]">
+        잠시 뒤 다시 시도해 주세요. 이 화면에서는 데모 데이터를
+        대신 보여드리지 않아요.
+      </p>
+      <button
+        type="button"
+        onClick={onRetry}
+        className="h-[48px] px-6 rounded-full bg-black text-white text-[16px] font-medium border border-black focus-ring"
+      >
+        다시 시도
+      </button>
+    </div>
   );
 }
 
