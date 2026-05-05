@@ -134,6 +134,48 @@ export async function listRentalIntents(limit = 50): Promise<RentalIntent[]> {
   return data.map((r) => rowToIntent(r as unknown as RentalIntentRow));
 }
 
+// Bundle 2, Slice 3 — server-only seller scoping read.
+//
+// Lists every `rental_intents` row owned by a single seller for the
+// seller dashboard's server-mode requests block. The action layer is
+// the authorization gate (it filters by `actor.sellerId`, never a
+// client-supplied id). This repo function is the persistence-side
+// belt:
+//
+//   - validates the seller id as a uuid; returns `[]` on a malformed
+//     value or when the marketplace client is unavailable;
+//   - filters by `seller_id` server-side via the Postgres `eq`
+//     predicate — a foreign row is impossible even if the action
+//     layer is bypassed;
+//   - does NOT join `listing_secrets`, payment session ids,
+//     settlement timestamps, or any private slot beyond what
+//     `rowToIntent` already maps;
+//   - bounded by `limit` (clamped to `[1, 200]`) to keep the query
+//     cheap and the response time bounded.
+//
+// The repo does NOT filter by `status`. The seller dashboard surface
+// surfaces every state ('requested' today; future slices may add
+// 'seller_approved' / 'cancelled' etc.). The action layer chooses
+// what to project; this function is the raw read.
+export async function listRentalIntentsBySeller(
+  sellerId: string,
+  limit = 100,
+): Promise<RentalIntent[]> {
+  const idRes = validateUuid(sellerId);
+  if (!idRes.ok) return [];
+  const client = getMarketplaceClient();
+  if (!client) return [];
+  const safe = Math.max(1, Math.min(200, Math.floor(limit)));
+  const { data, error } = await client
+    .from("rental_intents")
+    .select("*")
+    .eq("seller_id", idRes.value)
+    .order("updated_at", { ascending: false })
+    .limit(safe);
+  if (error || !data) return [];
+  return data.map((r) => rowToIntent(r as unknown as RentalIntentRow));
+}
+
 export type SaveRentalResult =
   | { ok: true; id: string }
   | { ok: false; error: string };

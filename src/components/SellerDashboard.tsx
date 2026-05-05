@@ -22,6 +22,11 @@ import {
   type SellerOwnedListingsLoadResult,
 } from "@/lib/client/sellerDashboardListingsClient";
 import {
+  loadSellerRequests,
+  type SellerDashboardRequest,
+  type SellerRequestsLoadResult,
+} from "@/lib/client/sellerDashboardRequestsClient";
+import {
   EMPTY_USER_TRUST_SUMMARY,
   hasVisibleTrustHistory,
   type ClaimWindow,
@@ -116,6 +121,15 @@ export function SellerDashboard() {
   //     back to the local listings array (existing behavior).
   const [serverListingsState, setServerListingsState] =
     useState<SellerOwnedListingsLoadResult | null>(null);
+  // Bundle 2 Slice 3 — server-mode incoming rental requests.
+  //   - `kind: "server"` → render the new ServerRequestsBlock with
+  //     server rows.
+  //   - `kind: "error"`  → render failure caption; render NO rows.
+  //   - `kind: "local"`  → adapter signaled local; the existing
+  //     local-mode pending/active blocks render instead. Server
+  //     requests state stays null in this branch.
+  const [serverRequestsState, setServerRequestsState] =
+    useState<SellerRequestsLoadResult | null>(null);
 
   // Mock-only session. Real per-user authentication is documented in
   // docs/mvp_security_guardrails.md §1; this constant is the migration
@@ -136,8 +150,11 @@ export function SellerDashboard() {
     if (chatIntakeMode === "server") {
       const next = await loadSellerOwnedListings();
       setServerListingsState(next);
+      const requests = await loadSellerRequests();
+      setServerRequestsState(requests);
     } else {
       setServerListingsState(null);
+      setServerRequestsState(null);
     }
     // Load handoff records for every handoff-eligible rental owned by
     // this seller. The Map is keyed by `${rentalIntentId}:${phase}` so
@@ -203,11 +220,16 @@ export function SellerDashboard() {
       // setState shape as the mount effect above.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setServerListingsState(null);
+      setServerRequestsState(null);
       return;
     }
     void loadSellerOwnedListings().then((next) => {
       if (cancelled) return;
       setServerListingsState(next);
+    });
+    void loadSellerRequests().then((next) => {
+      if (cancelled) return;
+      setServerRequestsState(next);
     });
     return () => {
       cancelled = true;
@@ -581,38 +603,46 @@ export function SellerDashboard() {
         </div>
       </section>
 
-      <section className="border-b border-black">
-        <div className="container-dashboard py-16">
-          <div className="grid-12 gap-y-12 items-start">
-            <div className="col-span-12 md:col-span-7 flex flex-col gap-3">
-              <PendingBlock
-                rows={pending}
-                busyId={busyId}
-                onApprove={handleApprove}
-                onDecline={handleDeclineSeller}
-                showRelativeTime={loaded}
-              />
-              {toast ? (
-                <span
-                  role="status"
-                  aria-live="polite"
-                  className="text-small text-[color:var(--ink-60)] border border-dashed border-[color:var(--line-dashed)] px-3 py-2"
-                >
-                  {toast}
-                </span>
-              ) : null}
-            </div>
-            <div className="col-span-12 md:col-span-5">
-              <ActiveBlock
-                rows={active}
-                busyId={busyId}
-                onAdvance={handleAdvance}
-                settlementBlockByRental={settlementBlockByRental}
-              />
+      {chatIntakeMode === "local" ? (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-16">
+            <div className="grid-12 gap-y-12 items-start">
+              <div className="col-span-12 md:col-span-7 flex flex-col gap-3">
+                <PendingBlock
+                  rows={pending}
+                  busyId={busyId}
+                  onApprove={handleApprove}
+                  onDecline={handleDeclineSeller}
+                  showRelativeTime={loaded}
+                />
+                {toast ? (
+                  <span
+                    role="status"
+                    aria-live="polite"
+                    className="text-small text-[color:var(--ink-60)] border border-dashed border-[color:var(--line-dashed)] px-3 py-2"
+                  >
+                    {toast}
+                  </span>
+                ) : null}
+              </div>
+              <div className="col-span-12 md:col-span-5">
+                <ActiveBlock
+                  rows={active}
+                  busyId={busyId}
+                  onAdvance={handleAdvance}
+                  settlementBlockByRental={settlementBlockByRental}
+                />
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
+      ) : (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-16">
+            <ServerRequestsBlock state={serverRequestsState} />
+          </div>
+        </section>
+      )}
 
       {trustSummaryHasContent ? (
         <section className="border-b border-black">
@@ -1292,4 +1322,108 @@ function ListedStatusBadge({ status }: { status: ListedItem["status"] }) {
   if (status === "게시됨") return <Badge variant="filled">{status}</Badge>;
   if (status === "심사 중") return <Badge variant="dashed">{status}</Badge>;
   return <Badge variant="outline">{status}</Badge>;
+}
+
+// Bundle 2 Slice 3 — server-mode incoming rental requests block.
+//
+// Only renders inside the `chatIntakeMode === "server"` branch of the
+// dashboard. The component never falls back to local mock requests:
+// a `kind: "error"` envelope renders the failure caption with no
+// rows; a `kind: "local"` envelope (defense-in-depth) renders an
+// empty state without leaking a local fixture into the server view.
+//
+// The block is READ-ONLY in this slice. There are no approve /
+// decline buttons; status transitions are a future slice. Copy
+// makes the pre-payment posture explicit:
+//
+//   - section caption: "베타: 요청만 표시돼요. 결제·정산은 아직
+//     연결되어 있지 않아요."
+//   - empty: "아직 서버 요청이 없어요."
+//   - error: "서버 요청을 불러오지 못했어요. 잠시 뒤 다시 시도해
+//     주세요."
+function ServerRequestsBlock({
+  state,
+}: {
+  state: SellerRequestsLoadResult | null;
+}) {
+  const isLoading = state === null;
+  const isError = state?.kind === "error";
+  // Defense-in-depth: even if the server action returned a `local`
+  // envelope inside server mode (which only happens through a
+  // configuration drift the action's defense-in-depth check guards
+  // against), render the empty-server view rather than letting a
+  // local fixture render here.
+  const requests: SellerDashboardRequest[] =
+    state?.kind === "server" ? state.requests : [];
+  const isEmpty = !isLoading && !isError && requests.length === 0;
+
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <h3 className="text-title">서버에서 받은 대여 요청</h3>
+        <Badge variant="dashed">
+          {isError || isLoading ? "—" : `${requests.length}건`}
+        </Badge>
+      </header>
+      <p
+        role="status"
+        className="text-small text-[color:var(--ink-60)] border-b border-[color:var(--ink-12)] px-6 py-3"
+      >
+        베타: 요청만 표시돼요. 결제·정산은 아직 연결되어 있지 않아요.
+      </p>
+      {isError ? (
+        <div className="px-6 py-8">
+          <p className="text-small border border-dashed border-[color:var(--line-dashed)] px-3 py-2">
+            서버 요청을 불러오지 못했어요. 잠시 뒤 다시 시도해 주세요.
+          </p>
+        </div>
+      ) : isLoading ? (
+        <div className="px-6 py-8 text-small text-[color:var(--ink-60)]">
+          서버 요청을 불러오는 중이에요.
+        </div>
+      ) : isEmpty ? (
+        <div className="px-6 py-8 text-small text-[color:var(--ink-60)]">
+          아직 서버 요청이 없어요.
+        </div>
+      ) : (
+        <ul className="flex flex-col">
+          {requests.map((r, i) => (
+            <li
+              key={r.id}
+              className={`grid grid-cols-[60px_1fr_auto] gap-6 px-6 py-5 items-center ${
+                i !== requests.length - 1
+                  ? "border-b border-[color:var(--ink-12)]"
+                  : ""
+              }`}
+            >
+              <span className="text-caption text-[color:var(--ink-60)]">
+                {String(i + 1).padStart(2, "0")}
+              </span>
+              <div className="flex flex-col gap-1">
+                <span className="text-body font-medium">{r.productName}</span>
+                <span className="text-small text-[color:var(--ink-60)]">
+                  {r.borrowerDisplayName ?? "익명"} · {r.durationDays}일 ·{" "}
+                  {formatKRW(r.borrowerTotal)} (참고용)
+                </span>
+                {r.pickupArea ? (
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    수령 권역: {r.pickupArea}
+                  </span>
+                ) : null}
+              </div>
+              <div className="flex items-center gap-3">
+                <span className="text-caption text-[color:var(--ink-60)]">
+                  {statusLabel(r.status)}
+                </span>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+      <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
+        승인·거절·결제 단계는 아직 준비 중이에요. 지금은 요청 도착만
+        확인할 수 있어요.
+      </p>
+    </section>
+  );
 }

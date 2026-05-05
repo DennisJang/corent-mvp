@@ -18,6 +18,7 @@ export {
 export {
   getRentalIntentById,
   listRentalIntents,
+  listRentalIntentsBySeller,
   saveRentalIntent,
   appendRentalEvent,
   listRentalEvents,
