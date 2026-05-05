@@ -43,18 +43,39 @@
 
 import { resolveServerActor } from "@/server/actors/resolveServerActor";
 import { getBackendMode } from "@/server/backend/mode";
+import { logServerWarn } from "@/server/logging/logger";
 
 export type ChatIntakeModeResult =
   | { mode: "local" }
   | { mode: "server"; capability: "seller" | "renter" };
 
+// Dev-only diagnostic for the four early-return branches that
+// produce `{ mode: "local" }`. The response shape is unchanged;
+// we only emit a non-secret reason code through the redacting
+// logger so a founder running the smoke can tell which branch
+// fired without touching env values, cookies, or PII. Guarded by
+// `NODE_ENV !== "production"` so the prod log surface is never
+// affected.
+function devWarnLocalFallback(reason: string): void {
+  if (process.env.NODE_ENV !== "production") {
+    logServerWarn("chat_intake_mode_local", { reason });
+  }
+}
+
 export async function getChatIntakeModeAction(): Promise<ChatIntakeModeResult> {
   if (getBackendMode() !== "supabase") {
+    devWarnLocalFallback("backend_mode_not_supabase");
     return { mode: "local" };
   }
   const actor = await resolveServerActor({ prefer: "seller" });
-  if (!actor) return { mode: "local" };
-  if (actor.source !== "supabase") return { mode: "local" };
+  if (!actor) {
+    devWarnLocalFallback("no_actor");
+    return { mode: "local" };
+  }
+  if (actor.source !== "supabase") {
+    devWarnLocalFallback("actor_source_not_supabase");
+    return { mode: "local" };
+  }
   // The resolver under `prefer: "seller"` returns the seller actor
   // when the profile has the seller capability, the renter actor
   // when only the borrower capability exists, and `null` when
@@ -69,5 +90,6 @@ export async function getChatIntakeModeAction(): Promise<ChatIntakeModeResult> {
   // Admin actors are not part of the chat intake surface; a future
   // edit that adds a third kind should explicitly decide its
   // capability mapping. Today we fail safe to local.
+  devWarnLocalFallback("unsupported_actor_kind");
   return { mode: "local" };
 }
