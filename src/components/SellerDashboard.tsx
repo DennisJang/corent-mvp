@@ -27,6 +27,10 @@ import {
   type SellerRequestsLoadResult,
 } from "@/lib/client/sellerDashboardRequestsClient";
 import {
+  approveRequest,
+  declineRequest,
+} from "@/lib/client/respondToRentalRequestClient";
+import {
   EMPTY_USER_TRUST_SUMMARY,
   hasVisibleTrustHistory,
   type ClaimWindow,
@@ -103,6 +107,16 @@ export function SellerDashboard() {
   >(() => new Map());
   const [loaded, setLoaded] = useState(false);
   const [busyId, setBusyId] = useState<string | null>(null);
+  // Bundle 3 slice 1 — server-mode approve / decline busy-row +
+  // toast state. Distinct from `busyId` (which the local-mode
+  // PendingBlock owns) so the two sets of buttons can never
+  // accidentally cross-disable each other.
+  const [serverRespondBusyId, setServerRespondBusyId] = useState<string | null>(
+    null,
+  );
+  const [serverRespondToast, setServerRespondToast] = useState<string | null>(
+    null,
+  );
   const [toast, setToast] = useState<string | null>(null);
   // PR 5F — observable chat-intake mode signal. The chat card
   // probes the server-side mode at mount and reports the result
@@ -474,6 +488,61 @@ export function SellerDashboard() {
     }
   };
 
+  // Bundle 3 slice 1 — server-mode approve / decline of an
+  // incoming rental request. Distinct from `handleApprove` /
+  // `handleDeclineSeller` (which act on local mock rentals
+  // through `rentalService`). The server path:
+  //   1. calls the typed client adapter (no @/server import in
+  //      this component — boundary test enforces),
+  //   2. on `kind: "ok"` re-loads `serverRequestsState` so the
+  //      row's status flips immediately and any stale rows fall
+  //      out of the `requested` set,
+  //   3. surfaces calm Korean toast copy per envelope kind. No
+  //      payment / pickup / return / settlement transition is
+  //      kicked off here — those remain deferred slices.
+  const handleServerRespond = async (
+    rentalIntentId: string,
+    decision: "approve" | "decline",
+  ): Promise<void> => {
+    setServerRespondBusyId(rentalIntentId);
+    setServerRespondToast(null);
+    try {
+      const result =
+        decision === "approve"
+          ? await approveRequest({ rentalIntentId })
+          : await declineRequest({ rentalIntentId });
+      if (result.kind === "ok") {
+        const okSuffix = result.result.alreadyResponded
+          ? "이미 처리된 요청이에요."
+          : decision === "approve"
+            ? "요청을 수락했어요."
+            : "요청을 거절했어요.";
+        setServerRespondToast(
+          `${okSuffix} 결제·픽업·반납·정산 단계는 아직 시작되지 않았어요.`,
+        );
+        // Re-fetch so the row's status flips out of `requested`.
+        const next = await loadSellerRequests();
+        setServerRequestsState(next);
+        return;
+      }
+      // `result.kind` is narrowed to non-"ok" by the early return
+      // above; the Record's key type therefore excludes "ok".
+      const failureCopy: Record<typeof result.kind, string> = {
+        unauthenticated: "로그인이 필요해요. 다시 로그인 후 시도해 주세요.",
+        ownership: "이 요청을 처리할 권한이 없어요.",
+        not_found: "요청을 찾을 수 없어요. 새로고침 후 다시 시도해 주세요.",
+        input: "요청 정보가 올바르지 않아요.",
+        conflict:
+          "이 요청은 더 이상 수락 또는 거절할 수 없는 상태예요. 새로고침해 주세요.",
+        unsupported: "데모 환경에서는 처리할 수 없어요.",
+        error: "처리하지 못했어요. 잠시 뒤 다시 시도해 주세요.",
+      };
+      setServerRespondToast(failureCopy[result.kind]);
+    } finally {
+      setServerRespondBusyId(null);
+    }
+  };
+
   const handleAdvance = async (intent: RentalIntent) => {
     setBusyId(intent.id);
     try {
@@ -639,7 +708,17 @@ export function SellerDashboard() {
       ) : (
         <section className="border-b border-black">
           <div className="container-dashboard py-16">
-            <ServerRequestsBlock state={serverRequestsState} />
+            <ServerRequestsBlock
+              state={serverRequestsState}
+              busyId={serverRespondBusyId}
+              toast={serverRespondToast}
+              onApprove={(rentalIntentId) =>
+                handleServerRespond(rentalIntentId, "approve")
+              }
+              onDecline={(rentalIntentId) =>
+                handleServerRespond(rentalIntentId, "decline")
+              }
+            />
           </div>
         </section>
       )}
@@ -1343,8 +1422,16 @@ function ListedStatusBadge({ status }: { status: ListedItem["status"] }) {
 //     주세요."
 function ServerRequestsBlock({
   state,
+  busyId,
+  toast,
+  onApprove,
+  onDecline,
 }: {
   state: SellerRequestsLoadResult | null;
+  busyId: string | null;
+  toast: string | null;
+  onApprove: (rentalIntentId: string) => void;
+  onDecline: (rentalIntentId: string) => void;
 }) {
   const isLoading = state === null;
   const isError = state?.kind === "error";
@@ -1369,7 +1456,8 @@ function ServerRequestsBlock({
         role="status"
         className="text-small text-[color:var(--ink-60)] border-b border-[color:var(--ink-12)] px-6 py-3"
       >
-        베타: 요청만 표시돼요. 결제·정산은 아직 연결되어 있지 않아요.
+        베타: 수락·거절은 처리되지만, 결제·픽업·반납·정산 단계는 아직
+        연결되어 있지 않아요.
       </p>
       {isError ? (
         <div className="px-6 py-8">
@@ -1412,17 +1500,48 @@ function ServerRequestsBlock({
                 ) : null}
               </div>
               <div className="flex items-center gap-3">
-                <span className="text-caption text-[color:var(--ink-60)]">
-                  {statusLabel(r.status)}
-                </span>
+                {r.status === "requested" ? (
+                  <>
+                    <Button
+                      variant="secondary"
+                      size="md"
+                      onClick={() => onDecline(r.id)}
+                      disabled={busyId === r.id}
+                      type="button"
+                    >
+                      요청 거절
+                    </Button>
+                    <Button
+                      size="md"
+                      onClick={() => onApprove(r.id)}
+                      disabled={busyId === r.id}
+                      type="button"
+                    >
+                      요청 수락
+                    </Button>
+                  </>
+                ) : (
+                  <span className="text-caption text-[color:var(--ink-60)]">
+                    {statusLabel(r.status)}
+                  </span>
+                )}
               </div>
             </li>
           ))}
         </ul>
       )}
+      {toast ? (
+        <p
+          role="status"
+          aria-live="polite"
+          className="text-small text-[color:var(--ink-60)] border-t border-[color:var(--ink-12)] px-6 py-3"
+        >
+          {toast}
+        </p>
+      ) : null}
       <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
-        승인·거절·결제 단계는 아직 준비 중이에요. 지금은 요청 도착만
-        확인할 수 있어요.
+        결제·픽업·반납·정산은 아직 연결되어 있지 않아요. 수락·거절 외 다른
+        조작은 준비되면 추가될 예정이에요.
       </p>
     </section>
   );
