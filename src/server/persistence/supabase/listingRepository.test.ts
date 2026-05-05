@@ -10,6 +10,7 @@ import {
   listApprovedListings,
   listListingsBySeller,
   saveListing,
+  setListingStatus,
 } from "./listingRepository";
 import { _resetMarketplaceClientForTests } from "./client";
 import type { ListingIntent } from "@/domain/intents";
@@ -21,6 +22,7 @@ function makeFakeClient(
     select?: () => { data: unknown; error: unknown };
     upsert?: () => { data: unknown; error: unknown };
     insert?: () => { data: unknown; error: unknown };
+    update?: () => { data: unknown; error: unknown };
   },
   capture: Capture[],
 ) {
@@ -84,6 +86,26 @@ function makeFakeClient(
           },
           then(...args: Parameters<Promise<unknown>["then"]>) {
             return Promise.resolve(r).then(...args);
+          },
+        };
+      },
+      update(payload: unknown) {
+        capture.push({ table, method: "update", args: [payload] });
+        const r = responders.update
+          ? responders.update()
+          : { data: { id: "ok" }, error: null };
+        return {
+          eq(col: string, val: unknown) {
+            capture.push({ table, method: "eq", args: [col, val] });
+            return this;
+          },
+          select(cols?: string) {
+            capture.push({ table, method: "select", args: [cols] });
+            return this;
+          },
+          maybeSingle() {
+            capture.push({ table, method: "maybeSingle", args: [] });
+            return Promise.resolve(r);
           },
         };
       },
@@ -476,5 +498,135 @@ describe("listing repository — happy path with mocked client", () => {
     );
     expect(listingsUpsert).toBeTruthy();
     expect(JSON.stringify(listingsUpsert?.args?.[0])).not.toMatch(/private_serial/);
+  });
+});
+
+describe("setListingStatus — input validation and safe path", () => {
+  const VALID_ID = "11111111-2222-4333-8444-555555555555";
+
+  beforeEach(() => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+  });
+
+  it("rejects non-uuid id without touching the client", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setListingStatus(
+      "not-a-uuid",
+      "approved" as ListingIntent["status"],
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/uuid/);
+    expect(captured).toEqual([]);
+  });
+
+  it("rejects unknown listing status (forged 'admin' / 'public' etc.)", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setListingStatus(
+      VALID_ID,
+      "admin" as unknown as ListingIntent["status"],
+    );
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/status/);
+    expect(captured).toEqual([]);
+  });
+
+  it("returns ok=false with 'unavailable' when the marketplace client is null", async () => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+    const r = await setListingStatus(VALID_ID, "approved");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/unavailable/);
+  });
+});
+
+describe("setListingStatus — happy path with mocked client", () => {
+  const VALID_ID = "11111111-2222-4333-8444-555555555555";
+
+  it("issues an UPDATE filtered by id and returns the canonical id+status", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: { id: VALID_ID }, error: null }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setListingStatus(VALID_ID, "approved");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.id).toBe(VALID_ID);
+    expect(r.status).toBe("approved");
+
+    const updateCall = captured.find(
+      (c) => c.table === "listings" && c.method === "update",
+    );
+    expect(updateCall).toBeTruthy();
+    // Only the status column is updated. No raw_seller_input,
+    // seller_id, pricing, or verification fields.
+    const payload = JSON.stringify(updateCall?.args?.[0] ?? {});
+    expect(payload).toMatch(/"status":"approved"/);
+    expect(payload).not.toMatch(/raw_seller_input/);
+    expect(payload).not.toMatch(/seller_id/);
+    expect(payload).not.toMatch(/private_serial/);
+    expect(payload).not.toMatch(/price_/);
+    expect(payload).not.toMatch(/listing_secrets/);
+
+    // Filter is by listing id only.
+    const eqCalls = captured.filter(
+      (c) => c.table === "listings" && c.method === "eq",
+    );
+    expect(eqCalls.some((c) => c.args[0] === "id" && c.args[1] === VALID_ID))
+      .toBe(true);
+    expect(eqCalls.some((c) => c.args[0] === "seller_id")).toBe(false);
+
+    // The select clause does not name listing_secrets or any private
+    // column.
+    const selectCall = captured.find(
+      (c) => c.table === "listings" && c.method === "select",
+    );
+    expect(JSON.stringify(selectCall?.args ?? [])).not.toMatch(
+      /listing_secrets|raw_seller_input|private_serial/,
+    );
+  });
+
+  it("returns ok=false when the underlying update errors", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: null, error: { message: "boom" } }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setListingStatus(VALID_ID, "approved");
+    expect(r.ok).toBe(false);
+  });
+
+  it("returns ok=false when the row does not exist (data null)", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: null, error: null }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setListingStatus(VALID_ID, "approved");
+    expect(r.ok).toBe(false);
   });
 });

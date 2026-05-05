@@ -15,6 +15,7 @@
 import type { CategoryId } from "@/domain/categories";
 import type {
   ListingIntent,
+  ListingStatus,
   VerificationIntent,
 } from "@/domain/intents";
 import type { ItemCondition } from "@/domain/products";
@@ -389,6 +390,52 @@ export async function saveListing({ intent }: SaveListingInput): Promise<SaveLis
   }
 
   return { ok: true, id: idRes.value };
+}
+
+// Updates the `status` column on a single listing row. Used by the
+// founder-controlled publication action (`publishListingAction`) to
+// transition a server-side draft to `approved`.
+//
+// Hard rules:
+//   - Validates `id` as a uuid and `status` against the canonical
+//     enum BEFORE issuing the update — a forged caller cannot smuggle
+//     a non-listing-status string through.
+//   - Updates ONLY the `status` column (and the auto-managed
+//     `updated_at` via the table trigger). Never touches
+//     `raw_seller_input`, `seller_id`, pricing, or verification.
+//   - Never joins `listing_secrets`. The select clause names only
+//     `id` so the round-tripped row carries no private fields.
+//   - Returns `{ ok: false }` on missing client, validator failure,
+//     or DB error. The caller (server action) maps the error to a
+//     typed `IntentResult`; the repo never throws.
+export type SetListingStatusResult =
+  | { ok: true; id: string; status: ListingStatus }
+  | { ok: false; error: string };
+
+export async function setListingStatus(
+  id: string,
+  status: ListingStatus,
+): Promise<SetListingStatusResult> {
+  const idRes = validateUuid(id);
+  if (!idRes.ok) return { ok: false, error: idRes.error };
+  const statusRes = validateListingStatus(status);
+  if (!statusRes.ok) return { ok: false, error: statusRes.error };
+  const client = getMarketplaceClient();
+  if (!client) return { ok: false, error: "supabase client unavailable" };
+
+  const { data, error } = await client
+    .from("listings")
+    .update({ status: statusRes.value })
+    .eq("id", idRes.value)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    return {
+      ok: false,
+      error: error?.message ?? "listing status update failed",
+    };
+  }
+  return { ok: true, id: idRes.value, status: statusRes.value };
 }
 
 export async function countListingsByStatus(): Promise<

@@ -10,7 +10,9 @@ export {
   listApprovedListings,
   listListingsBySeller,
   saveListing,
+  setListingStatus,
   countListingsByStatus,
+  type SetListingStatusResult,
 } from "./listingRepository";
 
 export {
