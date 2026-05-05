@@ -65,11 +65,35 @@
 import type { PublicListing } from "@/domain/listings";
 import { mapApprovedListingIntentToPublicListing } from "@/lib/services/publicListingService";
 import { getBackendMode } from "@/server/backend/mode";
-import { listApprovedListings } from "@/server/persistence/supabase/listingRepository";
+import {
+  getListingById,
+  listApprovedListings,
+} from "@/server/persistence/supabase/listingRepository";
+import { validateUuid } from "@/server/persistence/supabase/validators";
 
 export type PublicListingsReadResult =
   | { mode: "local" }
   | { mode: "server"; listings: PublicListing[] };
+
+export type PublicListingDetailReadResult =
+  | { mode: "local" }
+  | { mode: "server"; listing: PublicListing | null };
+
+// Bundle 2, Slice 2 — server-projected approved listings get a
+// clickable card. The detail href points at the new server-only
+// route under `/listings/[listingId]`, which is gated to supabase
+// mode + status='approved' + minimum-shape projection.
+//
+// We override `detailHref` at the action layer (not inside the
+// shared `mapApprovedListingIntentToPublicListing` mapper) so the
+// pure mapper still produces `detailHref: undefined` for every
+// approved listing intent. Mock-mode local projections (read via
+// `publicListingService.listPublicListings()` from the browser)
+// continue to render as non-clickable cards — they have no
+// server detail page and will not silently appear server-backed.
+function withServerDetailHref(dto: PublicListing): PublicListing {
+  return { ...dto, detailHref: `/listings/${dto.sourceId}` };
+}
 
 export async function listPublicListingsAction(): Promise<PublicListingsReadResult> {
   // Mock / default backend: defer to the client's existing local
@@ -97,8 +121,71 @@ export async function listPublicListingsAction(): Promise<PublicListingsReadResu
   const projected: PublicListing[] = [];
   for (const intent of approvedIntents) {
     const safe = mapApprovedListingIntentToPublicListing(intent);
-    if (safe) projected.push(safe);
+    if (safe) projected.push(withServerDetailHref(safe));
   }
 
   return { mode: "server", listings: projected };
+}
+
+// Bundle 2, Slice 2 — single-listing read for the new
+// `/listings/[listingId]` server detail route.
+//
+// Hard rules:
+//
+//   - The `listingId` argument is the canonical row id (no
+//     `listing:` prefix). The detail route URL carries the bare
+//     uuid; this action validates uuid shape before any DB read.
+//
+//   - Mock / default backend mode → `{ mode: "local" }`. The new
+//     `/listings/[listingId]` route is server-mode only; in mock
+//     mode the page surfaces a 404. Local-MVP demo flows continue
+//     to use `/items/[id]` against the static `PRODUCTS` fixture.
+//
+//   - Supabase mode → reads `getListingById`. Anything other than
+//     `status='approved'` collapses to `{ listing: null }` so a
+//     renter cannot enumerate draft / in-review / rejected rows
+//     by trying ids in the URL bar.
+//
+//   - The output is always a sanitized `PublicListing` DTO (or
+//     null). `ListingIntent` itself is NEVER returned to the
+//     caller; the projection mapper is the privacy boundary.
+//
+//   - Repo throw → calm `{ listing: null }`. No SQL / env / table /
+//     row / service-role hint leaks through the action surface.
+export async function getServerApprovedPublicListingAction(
+  listingId: string,
+): Promise<PublicListingDetailReadResult> {
+  if (getBackendMode() !== "supabase") {
+    return { mode: "local" };
+  }
+
+  // Validate the uuid before reaching the DB. Bad shapes look
+  // identical to "missing" from the renter's perspective.
+  const idRes = validateUuid(listingId);
+  if (!idRes.ok) {
+    return { mode: "server", listing: null };
+  }
+
+  let intent;
+  try {
+    intent = await getListingById(idRes.value);
+  } catch {
+    return { mode: "server", listing: null };
+  }
+  if (!intent) {
+    return { mode: "server", listing: null };
+  }
+
+  // The repository's mapper returns the full ListingIntent.
+  // `mapApprovedListingIntentToPublicListing` enforces
+  // `status === "approved"` AND the minimum-shape gate; everything
+  // else collapses to `null`.
+  const safe = mapApprovedListingIntentToPublicListing(intent);
+  if (!safe) {
+    return { mode: "server", listing: null };
+  }
+  return {
+    mode: "server",
+    listing: withServerDetailHref(safe),
+  };
 }

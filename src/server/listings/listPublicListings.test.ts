@@ -36,13 +36,21 @@ vi.mock("@/server/persistence/supabase/listingRepository", async () => {
   return {
     ...actual,
     listApprovedListings: vi.fn(async () => []),
+    getListingById: vi.fn(async () => null),
   };
 });
 
-import { listApprovedListings } from "@/server/persistence/supabase/listingRepository";
-import { listPublicListingsAction } from "./listPublicListings";
+import {
+  getListingById,
+  listApprovedListings,
+} from "@/server/persistence/supabase/listingRepository";
+import {
+  getServerApprovedPublicListingAction,
+  listPublicListingsAction,
+} from "./listPublicListings";
 
 const mockListApproved = vi.mocked(listApprovedListings);
+const mockGetListing = vi.mocked(getListingById);
 
 const SELLER_ID = "11111111-2222-4333-8444-555555555555";
 
@@ -93,6 +101,8 @@ function listingFixture(
 beforeEach(() => {
   mockListApproved.mockReset();
   mockListApproved.mockResolvedValue([]);
+  mockGetListing.mockReset();
+  mockGetListing.mockResolvedValue(null);
 });
 
 afterEach(() => {
@@ -150,9 +160,39 @@ describe("listPublicListingsAction — supabase backend mode", () => {
     });
     expect(dto.estimatedValue).toBe(200000);
     expect(dto.isPersistedProjection).toBe(true);
-    // Approved persisted listings render as non-clickable cards in
-    // this slice; a public detail route is deferred.
-    expect(dto.detailHref).toBeUndefined();
+    // Bundle 2, Slice 2 — server-projected listings get a clickable
+    // detail href that points at the new `/listings/[listingId]`
+    // route. Mock-mode local projections (read from the browser via
+    // `publicListingService.listPublicListings()`) continue to render
+    // as non-clickable cards because the pure mapper still returns
+    // `detailHref: undefined` and only this action layer overlays the
+    // server detail href.
+    expect(dto.detailHref).toBe(
+      "/listings/44444444-2222-4333-8444-777777777777",
+    );
+  });
+
+  it("server-projected listings link to /listings/<sourceId> regardless of how many rows are returned", async () => {
+    mockListApproved.mockResolvedValueOnce([
+      listingFixture({
+        id: "44444444-2222-4333-8444-777777777777",
+        status: "approved",
+      }),
+      listingFixture({
+        id: "44444444-2222-4333-8444-aaaaaaaaaaaa",
+        status: "approved",
+      }),
+    ]);
+    const r = await listPublicListingsAction();
+    if (r.mode !== "server") throw new Error("expected server mode");
+    expect(r.listings).toHaveLength(2);
+    for (const dto of r.listings) {
+      expect(dto.detailHref).toBe(`/listings/${dto.sourceId}`);
+      // Must point at /listings, NOT /items — otherwise we'd be
+      // routing a server-approved listing through the static-only
+      // `/items/[id]` demo path.
+      expect(dto.detailHref).not.toMatch(/^\/items\//);
+    }
   });
 
   it("filters out non-approved rows even if the repo accidentally returns them (defense in depth)", async () => {
@@ -261,6 +301,119 @@ describe("listPublicListingsAction — supabase backend mode", () => {
     expect(blob).not.toContain("relation");
     expect(blob).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
     expect(blob).not.toContain("does not exist");
+  });
+});
+
+describe("getServerApprovedPublicListingAction — mock / default mode", () => {
+  it("returns mode: local without touching the repo", async () => {
+    const r = await getServerApprovedPublicListingAction(
+      "44444444-2222-4333-8444-777777777777",
+    );
+    expect(r).toEqual({ mode: "local" });
+    expect(mockGetListing).not.toHaveBeenCalled();
+  });
+});
+
+describe("getServerApprovedPublicListingAction — supabase mode", () => {
+  beforeEach(() => {
+    vi.stubEnv("CORENT_BACKEND_MODE", "supabase");
+  });
+
+  const VALID_ID = "44444444-2222-4333-8444-777777777777";
+
+  it("rejects malformed listing id without touching the repo (collapse to listing=null)", async () => {
+    const r = await getServerApprovedPublicListingAction("not-a-uuid");
+    expect(r).toEqual({ mode: "server", listing: null });
+    expect(mockGetListing).not.toHaveBeenCalled();
+  });
+
+  it("returns listing=null when the row does not exist", async () => {
+    mockGetListing.mockResolvedValueOnce(null);
+    const r = await getServerApprovedPublicListingAction(VALID_ID);
+    expect(r).toEqual({ mode: "server", listing: null });
+  });
+
+  it("collapses every non-approved status to listing=null (no enumeration of private rows)", async () => {
+    for (const status of [
+      "draft",
+      "ai_extracted",
+      "verification_incomplete",
+      "human_review_pending",
+      "rejected",
+    ] as const) {
+      mockGetListing.mockResolvedValueOnce(listingFixture({ status }));
+      const r = await getServerApprovedPublicListingAction(VALID_ID);
+      expect(r.mode).toBe("server");
+      if (r.mode !== "server") return;
+      expect(r.listing).toBeNull();
+    }
+  });
+
+  it("returns a sanitized DTO with detailHref=/listings/<id> for an approved row", async () => {
+    mockGetListing.mockResolvedValueOnce(
+      listingFixture({ id: VALID_ID, status: "approved" }),
+    );
+    const r = await getServerApprovedPublicListingAction(VALID_ID);
+    expect(r.mode).toBe("server");
+    if (r.mode !== "server" || !r.listing) {
+      throw new Error("expected approved listing");
+    }
+    expect(r.listing.publicListingId).toBe(`listing:${VALID_ID}`);
+    expect(r.listing.source).toBe("approved_listing_intent");
+    expect(r.listing.sourceId).toBe(VALID_ID);
+    expect(r.listing.detailHref).toBe(`/listings/${VALID_ID}`);
+    expect(r.listing.title).toBe("테스트 마사지건");
+    expect(r.listing.category).toBe("massage_gun");
+    expect(r.listing.pickupArea).toBe("마포구");
+    expect(r.listing.prices).toEqual({
+      "1d": 9000,
+      "3d": 21000,
+      "7d": 39000,
+    });
+    expect(r.listing.estimatedValue).toBe(200000);
+    expect(r.listing.isPersistedProjection).toBe(true);
+  });
+
+  it("DTO never carries rawSellerInput / privateSerialNumber / verification internals / human review notes", async () => {
+    mockGetListing.mockResolvedValueOnce(listingFixture({ status: "approved" }));
+    const r = await getServerApprovedPublicListingAction(VALID_ID);
+    if (r.mode !== "server" || !r.listing) {
+      throw new Error("expected approved listing");
+    }
+    const blob = JSON.stringify(r.listing);
+    expect(blob).not.toContain("DEMO 셀러 원본 메모");
+    expect(blob).not.toContain("SN-SECRET-12345");
+    expect(blob).not.toContain("내부 메모");
+    expect(blob).not.toMatch(/safetyCode/);
+    expect(blob).not.toMatch(/rawSellerInput/);
+    expect(blob).not.toMatch(/privateSerialNumber/);
+    expect(blob).not.toMatch(/humanReviewNotes/);
+    expect(blob).not.toMatch(/verification/);
+  });
+
+  it("repo throw collapses to listing=null without leaking SQL/env/stack", async () => {
+    mockGetListing.mockRejectedValueOnce(
+      new Error(
+        'relation "listings" does not exist; SUPABASE_SERVICE_ROLE_KEY=xxx',
+      ),
+    );
+    const r = await getServerApprovedPublicListingAction(VALID_ID);
+    expect(r).toEqual({ mode: "server", listing: null });
+    const blob = JSON.stringify(r);
+    expect(blob).not.toContain("relation");
+    expect(blob).not.toMatch(/SUPABASE_SERVICE_ROLE_KEY/);
+  });
+
+  it("DTO drops rows that fail the projection mapper's minimum-shape gate", async () => {
+    mockGetListing.mockResolvedValueOnce({
+      ...listingFixture({ status: "approved" }),
+      item: {
+        ...listingFixture().item,
+        pickupArea: undefined,
+      },
+    } as ListingIntent);
+    const r = await getServerApprovedPublicListingAction(VALID_ID);
+    expect(r).toEqual({ mode: "server", listing: null });
   });
 });
 
