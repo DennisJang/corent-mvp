@@ -9,6 +9,7 @@ export {
   getListingById,
   listApprovedListings,
   listListingsBySeller,
+  listRecentListings,
   saveListing,
   setListingStatus,
   countListingsByStatus,
@@ -45,8 +46,10 @@ export {
 
 export {
   insertFeedbackSubmission,
+  listRecentFeedbackSubmissions,
   type InsertFeedbackInput,
   type InsertFeedbackResult,
+  type RecentFeedbackSubmission,
 } from "./feedbackRepository";
 
 export {

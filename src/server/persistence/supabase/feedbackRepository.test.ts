@@ -4,7 +4,10 @@
 
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
-import { insertFeedbackSubmission } from "./feedbackRepository";
+import {
+  insertFeedbackSubmission,
+  listRecentFeedbackSubmissions,
+} from "./feedbackRepository";
 
 vi.mock("./client", async () => {
   const mod = await vi.importActual<Record<string, unknown>>("./client");
@@ -21,6 +24,7 @@ type Capture = { table: string; method: string; args: unknown[] };
 function makeFakeClient(
   responders: {
     insert?: () => { data: unknown; error: unknown };
+    select?: () => { data: unknown; error: unknown };
   },
   capture: Capture[],
 ) {
@@ -43,6 +47,27 @@ function makeFakeClient(
             return Promise.resolve(r).then(...args);
           },
         };
+      },
+      select(cols?: string) {
+        capture.push({ table, method: "select", args: [cols] });
+        return this;
+      },
+      order(col: string, opts?: unknown) {
+        capture.push({ table, method: "order", args: [col, opts] });
+        return this;
+      },
+      limit(n: number) {
+        capture.push({ table, method: "limit", args: [n] });
+        const r = responders.select
+          ? responders.select()
+          : { data: [], error: null };
+        return Promise.resolve(r);
+      },
+      then(...args: Parameters<Promise<unknown>["then"]>) {
+        const r = responders.select
+          ? responders.select()
+          : { data: [], error: null };
+        return Promise.resolve(r).then(...args);
       },
     };
   }
@@ -177,5 +202,84 @@ describe("feedback repository — happy path with mocked client", () => {
     expect(payload.id).toBeUndefined();
     expect(payload.created_at).toBeUndefined();
     expect(payload.updated_at).toBeUndefined();
+  });
+});
+
+describe("listRecentFeedbackSubmissions — Bundle 2 Slice 4 read helper", () => {
+  it("returns [] when client is unavailable (no env)", async () => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+    expect(await listRecentFeedbackSubmissions()).toEqual([]);
+  });
+
+  it("returns [] when the underlying read errors", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      { select: () => ({ data: null, error: { message: "boom" } }) },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listRecentFeedbackSubmissions()).toEqual([]);
+  });
+
+  it("orders by created_at desc, clamps limit, returns DTO with bounded fields only", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [
+            {
+              id: "00000000-0000-0000-0000-000000000001",
+              kind: "wanted_item",
+              message: "다이슨 빌려보고 싶어요",
+              item_name: "다이슨 슈퍼소닉",
+              category: "home_care",
+              contact_email: "tester@example.com",
+              profile_id: "00000000-0000-0000-0000-000000000099",
+              source_page: "/",
+              status: "new",
+              created_at: "2026-05-01T00:00:00.000Z",
+            },
+          ],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listRecentFeedbackSubmissions(10_000);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toEqual({
+      id: "00000000-0000-0000-0000-000000000001",
+      kind: "wanted_item",
+      status: "new",
+      message: "다이슨 빌려보고 싶어요",
+      itemName: "다이슨 슈퍼소닉",
+      category: "home_care",
+      contactEmail: "tester@example.com",
+      profileId: "00000000-0000-0000-0000-000000000099",
+      sourcePage: "/",
+      createdAt: "2026-05-01T00:00:00.000Z",
+    });
+    // The query is ordered by created_at desc and the limit is
+    // clamped to 200 (the function's documented upper bound).
+    const orderCall = captured.find((c) => c.method === "order");
+    expect(orderCall?.args).toEqual([
+      "created_at",
+      { ascending: false },
+    ]);
+    const limitCall = captured.find((c) => c.method === "limit");
+    expect(limitCall?.args[0]).toBe(200);
+  });
+
+  it("clamps a too-small limit to 1", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    await listRecentFeedbackSubmissions(0);
+    const limitCall = captured.find((c) => c.method === "limit");
+    expect(limitCall?.args[0]).toBe(1);
   });
 });

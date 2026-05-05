@@ -31,6 +31,7 @@ import {
   validateOptionalCategory,
   validateOptionalUuid,
   type FeedbackKind,
+  type FeedbackStatus,
 } from "./validators";
 
 export type InsertFeedbackInput = {
@@ -93,4 +94,76 @@ export async function insertFeedbackSubmission(
     return { ok: false, error: error?.message ?? "feedback insert failed" };
   }
   return { ok: true, id: (data as { id: string }).id };
+}
+
+// Bundle 2 Slice 4 — server-only feedback read for the founder
+// validation cockpit. The action layer
+// (`src/server/admin/founderCockpitData.ts`) is the access-control
+// gate (it calls `requireFounderSession` before invoking this
+// helper); this module is row mapping + bounded read only.
+//
+// Hard rules:
+//
+//   - Service-role client bypasses RLS; the deny-by-default RLS on
+//     `feedback_submissions` plus the explicit `revoke all` from
+//     anon/authenticated mean nobody else can read these rows.
+//   - The DTO carries `contact_email` because the founder needs it
+//     to follow up with optionally-anonymous testers (this is the
+//     point of the intake). The DTO does NOT carry `updated_at`,
+//     internal review fields, or any other column not needed for
+//     the cockpit.
+//   - Bounded by `limit` (clamped to `[1, 200]`).
+type FeedbackRow = {
+  id: string;
+  kind: FeedbackKind;
+  message: string;
+  item_name: string | null;
+  category: CategoryId | null;
+  contact_email: string | null;
+  profile_id: string | null;
+  source_page: string | null;
+  status: FeedbackStatus;
+  created_at: string;
+};
+
+export type RecentFeedbackSubmission = {
+  id: string;
+  kind: FeedbackKind;
+  status: FeedbackStatus;
+  message: string;
+  itemName: string | null;
+  category: CategoryId | null;
+  contactEmail: string | null;
+  profileId: string | null;
+  sourcePage: string | null;
+  createdAt: string;
+};
+
+export async function listRecentFeedbackSubmissions(
+  limit = 50,
+): Promise<RecentFeedbackSubmission[]> {
+  const client = getMarketplaceClient();
+  if (!client) return [];
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+
+  const { data, error } = await client
+    .from("feedback_submissions")
+    .select(
+      "id, kind, message, item_name, category, contact_email, profile_id, source_page, status, created_at",
+    )
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+  if (error || !data) return [];
+  return (data as FeedbackRow[]).map((r) => ({
+    id: r.id,
+    kind: r.kind,
+    status: r.status,
+    message: r.message,
+    itemName: r.item_name,
+    category: r.category,
+    contactEmail: r.contact_email,
+    profileId: r.profile_id,
+    sourcePage: r.source_page,
+    createdAt: r.created_at,
+  }));
 }

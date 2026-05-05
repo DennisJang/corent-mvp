@@ -225,6 +225,61 @@ export async function listApprovedListings(
   });
 }
 
+// Bundle 2 Slice 4 — server-only recent-listings read for the
+// founder validation cockpit. Distinct from `listApprovedListings`
+// (status='approved' only); the cockpit needs to see drafts /
+// human_review_pending / approved / rejected so the founder can
+// triage incoming supply.
+//
+// Hard rules:
+//
+//   - Service-role client bypasses RLS; the access-control gate is
+//     `requireFounderSession()` inside the cockpit data orchestrator
+//     (`src/server/admin/founderCockpitData.ts`).
+//   - Joins `listing_verifications` like the other reads. Does NOT
+//     join `listing_secrets`; `privateSerialNumber` stays
+//     `undefined` in the mapper output. The cockpit's projection
+//     step will additionally strip rawSellerInput / verification
+//     internals before rendering.
+//   - Bounded by `limit` (clamped to `[1, 200]`).
+//   - No `status` filter; the founder cockpit ranks by recency and
+//     surfaces the status as a column.
+export async function listRecentListings(
+  limit = 50,
+): Promise<ListingIntent[]> {
+  const client = getMarketplaceClient();
+  if (!client) return [];
+  const safeLimit = Math.max(1, Math.min(200, Math.floor(limit)));
+
+  const { data, error } = await client
+    .from("listings")
+    .select(
+      `
+      id, seller_id, status, raw_seller_input, item_name, category,
+      estimated_value, condition, components, defects, pickup_area,
+      region_coarse, price_one_day, price_three_days, price_seven_days,
+      seller_adjusted_pricing, created_at, updated_at,
+      listing_verifications (
+        id, listing_id, status, safety_code, front_photo, back_photo,
+        components_photo, working_proof, safety_code_photo,
+        private_serial_stored, ai_notes, human_review_notes
+      )
+      `,
+    )
+    .order("created_at", { ascending: false })
+    .limit(safeLimit);
+
+  if (error || !data) return [];
+
+  return data.map((row) => {
+    const lvJoin = (row as { listing_verifications: VerificationRow[] | VerificationRow | null }).listing_verifications;
+    const verification: VerificationRow | null = Array.isArray(lvJoin)
+      ? lvJoin[0] ?? null
+      : lvJoin ?? null;
+    return mapRowToIntent(row as unknown as ListingRow, verification);
+  });
+}
+
 // Lists every listing owned by a single seller — including drafts,
 // in-flight statuses, and rejected rows — for the seller's own
 // dashboard. The Phase 2 schema's deny-by-default RLS is bypassed by

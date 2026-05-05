@@ -9,6 +9,7 @@ import {
   getListingById,
   listApprovedListings,
   listListingsBySeller,
+  listRecentListings,
   saveListing,
   setListingStatus,
 } from "./listingRepository";
@@ -191,6 +192,11 @@ describe("listing repository — client unavailable (default safe path)", () => 
     expect(
       await listListingsBySeller("22222222-2222-4333-8444-555555555555"),
     ).toEqual([]);
+  });
+
+  it("returns [] for listRecentListings when client is null", async () => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+    expect(await listRecentListings()).toEqual([]);
   });
 
   it("returns {} for countListingsByStatus when client is null", async () => {
@@ -628,5 +634,97 @@ describe("setListingStatus — happy path with mocked client", () => {
 
     const r = await setListingStatus(VALID_ID, "approved");
     expect(r.ok).toBe(false);
+  });
+});
+
+describe("listRecentListings — Bundle 2 Slice 4 founder cockpit read", () => {
+  it("returns rows ordered by created_at desc and clamps the limit to 200", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [
+            {
+              id: "44444444-2222-4333-8444-aaaaaaaaaaaa",
+              seller_id: "22222222-2222-4333-8444-555555555555",
+              status: "draft",
+              raw_seller_input: "DEMO 셀러 원본 메모",
+              item_name: "draft 마사지건",
+              category: "massage_gun",
+              estimated_value: 200000,
+              condition: "lightly_used",
+              components: ["본체"],
+              defects: null,
+              pickup_area: "마포구",
+              region_coarse: "unknown",
+              price_one_day: 8000,
+              price_three_days: 21000,
+              price_seven_days: 39000,
+              seller_adjusted_pricing: false,
+              created_at: "2026-04-30T01:00:00.000Z",
+              updated_at: "2026-04-30T01:00:00.000Z",
+              listing_verifications: null,
+            },
+            {
+              id: "44444444-2222-4333-8444-bbbbbbbbbbbb",
+              seller_id: "22222222-2222-4333-8444-555555555555",
+              status: "approved",
+              raw_seller_input: null,
+              item_name: "approved 마사지건",
+              category: "massage_gun",
+              estimated_value: 200000,
+              condition: "lightly_used",
+              components: ["본체"],
+              defects: null,
+              pickup_area: "마포구",
+              region_coarse: "unknown",
+              price_one_day: 8000,
+              price_three_days: 21000,
+              price_seven_days: 39000,
+              seller_adjusted_pricing: false,
+              created_at: "2026-04-30T00:00:00.000Z",
+              updated_at: "2026-04-30T00:00:00.000Z",
+              listing_verifications: null,
+            },
+          ],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listRecentListings(10_000);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]?.status).toBe("draft");
+    expect(rows[1]?.status).toBe("approved");
+    // Surfaces every status — no `eq("status", ...)` filter.
+    const eqCalls = captured.filter((c) => c.method === "eq");
+    expect(eqCalls).toEqual([]);
+    // Ordered by created_at desc.
+    const orderCall = captured.find((c) => c.method === "order");
+    expect(orderCall?.args).toEqual(["created_at", { ascending: false }]);
+    // Limit clamped to 200.
+    const limitCall = captured.find((c) => c.method === "limit");
+    expect(limitCall?.args[0]).toBe(200);
+    // Mapper does not surface `privateSerialNumber` (the select
+    // clause never names listing_secrets).
+    for (const row of rows) {
+      expect(row.item.privateSerialNumber).toBeUndefined();
+    }
+    const selectCall = captured.find((c) => c.method === "select");
+    expect(JSON.stringify(selectCall?.args)).not.toMatch(/listing_secrets/);
+  });
+
+  it("returns [] when the underlying read errors", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({ data: null, error: { message: "boom" } }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listRecentListings()).toEqual([]);
   });
 });
