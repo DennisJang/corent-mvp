@@ -29,7 +29,9 @@ import {
   deriveListingIntelligenceSignal,
   deriveRenterIntentSignal,
   deriveSellerStoreIntelligenceSignal,
+  deriveSellerStorePreview,
   explainMatch,
+  storeTypeLabel,
   useCaseTagLabel,
 } from "./marketplaceIntelligenceService";
 
@@ -449,6 +451,258 @@ describe("useCaseTagLabel — closed mapping", () => {
     expect(useCaseTagLabel("home_care_routine")).toBe("홈 케어 루틴");
     expect(useCaseTagLabel("short_trial")).toBe("1일 체험에 적합");
     expect(useCaseTagLabel("weekly_trial")).toBe("주 단위 체험에 적합");
+  });
+});
+
+describe("deriveSellerStorePreview — deterministic + bounded", () => {
+  it("is byte-stable for the same input", () => {
+    const input = {
+      listings: [{ category: "massage_gun" } as const],
+      requests: [{ pickupArea: "마포구", status: "requested" } as const],
+    };
+    const a = deriveSellerStorePreview(input);
+    const b = deriveSellerStorePreview(input);
+    expect(JSON.stringify(a)).toEqual(JSON.stringify(b));
+  });
+
+  it("classifies an empty seller as casual + emits the 'register first listing' nudge", () => {
+    const out = deriveSellerStorePreview({ listings: [] });
+    expect(out.storeType).toBe("casual");
+    expect(out.publicListingCount).toBe(0);
+    expect(out.categoryFocus).toEqual([]);
+    expect(out.pickupAreas).toEqual([]);
+    expect(out.improvementNudges).toContain("리스팅을 1개 이상 등록해 보세요.");
+  });
+
+  it("classifies 2-3 listings as repeat_light", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }, { category: "exercise" }],
+    });
+    expect(out.storeType).toBe("repeat_light");
+    expect(out.publicListingCount).toBe(2);
+  });
+
+  it("classifies 4+ listings as micro_store", () => {
+    const out = deriveSellerStorePreview({
+      listings: [
+        { category: "massage_gun" },
+        { category: "massage_gun" },
+        { category: "exercise" },
+        { category: "home_care" },
+      ],
+    });
+    expect(out.storeType).toBe("micro_store");
+    expect(out.publicListingCount).toBe(4);
+  });
+
+  it("orders categoryFocus by frequency desc with alphabetical tie-break, capped at 3", () => {
+    const out = deriveSellerStorePreview({
+      listings: [
+        { category: "massage_gun" },
+        { category: "massage_gun" },
+        { category: "massage_gun" },
+        { category: "exercise" },
+        { category: "exercise" },
+        { category: "home_care" },
+      ],
+    });
+    expect(out.categoryFocus).toEqual([
+      "massage_gun",
+      "exercise",
+      "home_care",
+    ]);
+  });
+
+  it("dedupes pickup areas, sorts alphabetically, caps at 3", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "성동구", status: "requested" },
+        { pickupArea: "마포구", status: "seller_approved" },
+        { pickupArea: "마포구", status: "requested" },
+        { pickupArea: "강남구", status: "seller_cancelled" },
+        { pickupArea: "은평구", status: "requested" },
+      ],
+    });
+    expect(out.pickupAreas).toHaveLength(3);
+    expect(new Set(out.pickupAreas).size).toBe(3);
+    expect(out.pickupAreas).toEqual([...out.pickupAreas].sort());
+  });
+
+  it("treats omitted requests array as empty (no pending-response nudge, no diversify nudge)", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+    });
+    expect(out.pickupAreas).toEqual([]);
+    expect(out.improvementNudges).not.toContain(
+      "받은 요청에 먼저 응답해 주세요.",
+    );
+    expect(out.improvementNudges).not.toContain(
+      "수령 권역을 한두 곳으로 정리해 보세요.",
+    );
+  });
+
+  it("emits the 'respond first' nudge when at least one request is in 'requested' status", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "마포구", status: "seller_approved" },
+        { pickupArea: "성동구", status: "requested" },
+      ],
+    });
+    expect(out.improvementNudges).toContain(
+      "받은 요청에 먼저 응답해 주세요.",
+    );
+  });
+
+  it("does NOT emit the 'respond first' nudge when no request is in 'requested' status", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "마포구", status: "seller_approved" },
+        { pickupArea: "성동구", status: "seller_cancelled" },
+      ],
+    });
+    expect(out.improvementNudges).not.toContain(
+      "받은 요청에 먼저 응답해 주세요.",
+    );
+  });
+
+  it("emits the 'diversify pickup' nudge only when there are more than 2 distinct pickup areas", () => {
+    const two = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "마포구", status: "requested" },
+        { pickupArea: "성동구", status: "requested" },
+      ],
+    });
+    expect(two.improvementNudges).not.toContain(
+      "수령 권역을 한두 곳으로 정리해 보세요.",
+    );
+
+    const three = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "마포구", status: "requested" },
+        { pickupArea: "성동구", status: "requested" },
+        { pickupArea: "강남구", status: "requested" },
+      ],
+    });
+    expect(three.improvementNudges).toContain(
+      "수령 권역을 한두 곳으로 정리해 보세요.",
+    );
+  });
+
+  it("always includes the 'check components' nudge so the panel never reads as empty advice", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+    });
+    expect(out.improvementNudges).toContain(
+      "구성품 사진과 설명을 확인해 주세요.",
+    );
+  });
+
+  it("caps improvementNudges at 3", () => {
+    const out = deriveSellerStorePreview({
+      listings: [],
+      requests: [
+        { pickupArea: "마포구", status: "requested" },
+        { pickupArea: "성동구", status: "requested" },
+        { pickupArea: "강남구", status: "requested" },
+      ],
+    });
+    expect(out.improvementNudges.length).toBeLessThanOrEqual(3);
+  });
+
+  it("positioningSentence opens with the CoRent try-before-buy framing", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+    });
+    expect(out.positioningSentence).toContain("사기 전에 며칠 써보기");
+  });
+
+  it("positioningSentence references the top category for repeat_light / micro_store", () => {
+    const repeat = deriveSellerStorePreview({
+      listings: [
+        { category: "massage_gun" },
+        { category: "massage_gun" },
+      ],
+    });
+    expect(repeat.positioningSentence).toContain("마사지건");
+
+    const micro = deriveSellerStorePreview({
+      listings: [
+        { category: "exercise" },
+        { category: "exercise" },
+        { category: "exercise" },
+        { category: "exercise" },
+      ],
+    });
+    expect(micro.positioningSentence).toContain("소형 운동기구");
+    expect(micro.positioningSentence).toContain("마이크로 스토어");
+  });
+
+  it("never emits regulated-language phrases anywhere in the preview", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [
+        { pickupArea: "마포구", status: "requested" },
+        { pickupArea: "성동구", status: "seller_approved" },
+        { pickupArea: "강남구", status: "seller_approved" },
+      ],
+    });
+    const blob = JSON.stringify(out);
+    for (const banned of [
+      "결제 완료",
+      "결제 처리",
+      "대여 확정",
+      "대여 완료",
+      "보증금 청구",
+      "보험",
+      "보장",
+      "환불",
+      "정산 완료",
+      "guaranteed",
+      "verified_seller",
+    ]) {
+      expect(blob).not.toContain(banned);
+    }
+  });
+
+  it("never echoes a borrower id, seller id, or payment session id (the input shape forbids them)", () => {
+    // The preview function takes only `{ listings, requests }`
+    // with allowlisted fields. Even if a caller forges a wider
+    // object via cast, the runtime never reads `borrowerId` /
+    // `sellerId` / `sessionId` / amounts. We assert it on a
+    // realistic call.
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+      requests: [{ pickupArea: "마포구", status: "requested" }],
+    });
+    const blob = JSON.stringify(out);
+    expect(blob).not.toMatch(/borrowerId/);
+    expect(blob).not.toMatch(/sellerId/);
+    expect(blob).not.toMatch(/sessionId/);
+    expect(blob).not.toMatch(/payment/);
+    expect(blob).not.toMatch(/settlement/);
+    expect(blob).not.toMatch(/safetyDeposit/);
+    expect(blob).not.toMatch(/sellerPayout/);
+    expect(blob).not.toMatch(/platformFee/);
+  });
+
+  it("carries provenance = 'deterministic' (never llm_candidate / human_reviewed in this slice)", () => {
+    const out = deriveSellerStorePreview({
+      listings: [{ category: "massage_gun" }],
+    });
+    expect(out.provenance).toBe("deterministic");
+  });
+});
+
+describe("storeTypeLabel — Korean labels", () => {
+  it("returns calm Korean copy for every store type", () => {
+    expect(storeTypeLabel("casual")).toBe("가벼운 시도");
+    expect(storeTypeLabel("repeat_light")).toBe("반복 시도");
+    expect(storeTypeLabel("micro_store")).toBe("마이크로 스토어");
   });
 });
 

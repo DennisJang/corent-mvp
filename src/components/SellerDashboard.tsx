@@ -66,6 +66,12 @@ import {
   pendingRequestRows,
   relativeTime,
 } from "@/lib/services/dashboardService";
+import {
+  deriveSellerStorePreview,
+  storeTypeLabel,
+  type SellerStorePreview,
+} from "@/lib/services/marketplaceIntelligenceService";
+import { CATEGORY_LABEL } from "@/domain/categories";
 import { formatKRW } from "@/lib/format";
 
 // Maps a rental status to the natural handoff phase. Returns `null`
@@ -333,6 +339,37 @@ export function SellerDashboard() {
     }
     return rows;
   }, [myRentals, handoffByKey]);
+
+  // Bundle 4 Slice 2 — deterministic seller-store preview. Server
+  // mode only: the preview is computed from the already server-
+  // scoped `serverListingsState` + `serverRequestsState` envelopes.
+  // We never mix mock fixtures into the preview, because the panel
+  // copy describes the seller's WOULD-BE public store, and a
+  // local-mock-driven sentence would be misleading.
+  //
+  // The preview is `null` when:
+  //   - mode is local (existing demo behavior unchanged), OR
+  //   - either envelope is `kind: "error"` (no silent fallback), OR
+  //   - listings have not loaded yet (`null` state).
+  const sellerStorePreview = useMemo<SellerStorePreview | null>(() => {
+    if (chatIntakeMode !== "server") return null;
+    if (!serverListingsState || serverListingsState.kind !== "server") {
+      return null;
+    }
+    const requestsForPreview =
+      serverRequestsState?.kind === "server"
+        ? serverRequestsState.requests.map((r) => ({
+            pickupArea: r.pickupArea,
+            status: r.status,
+          }))
+        : [];
+    return deriveSellerStorePreview({
+      listings: serverListingsState.listings.map((l) => ({
+        category: l.category,
+      })),
+      requests: requestsForPreview,
+    });
+  }, [chatIntakeMode, serverListingsState, serverRequestsState]);
 
   const seedMockData = async () => {
     const store = getPersistence();
@@ -722,6 +759,14 @@ export function SellerDashboard() {
           </div>
         </section>
       )}
+
+      {sellerStorePreview ? (
+        <section className="border-b border-black">
+          <div className="container-dashboard py-12">
+            <SellerStorePreviewPanel preview={sellerStorePreview} />
+          </div>
+        </section>
+      ) : null}
 
       {trustSummaryHasContent ? (
         <section className="border-b border-black">
@@ -1542,6 +1587,119 @@ function ServerRequestsBlock({
       <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
         결제·픽업·반납·정산은 아직 연결되어 있지 않아요. 수락·거절 외 다른
         조작은 준비되면 추가될 예정이에요.
+      </p>
+    </section>
+  );
+}
+
+// Bundle 4 Slice 2 — non-authoritative seller-store preview. Renders
+// a calm draft of how this seller's would-be public store would
+// summarize. Intentionally NOT a public surface: there is no
+// `/sellers/[sellerId]` server-backed route in this slice, and the
+// panel header says so explicitly.
+//
+// The panel reads only from the deterministic `SellerStorePreview`
+// signal — already computed from the seller-scoped server DTOs by
+// `deriveSellerStorePreview`. No raw seller input, no exact address,
+// no borrower UUIDs, no payment / settlement / admin internals
+// reach this surface by construction.
+function SellerStorePreviewPanel({
+  preview,
+}: {
+  preview: SellerStorePreview;
+}) {
+  const {
+    storeType,
+    publicListingCount,
+    categoryFocus,
+    pickupAreas,
+    positioningSentence,
+    improvementNudges,
+  } = preview;
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="flex items-baseline justify-between border-b border-black px-6 py-4">
+        <h3 className="text-title">셀러 스토어 초안</h3>
+        <Badge variant="dashed">{storeTypeLabel(storeType)}</Badge>
+      </header>
+      <p
+        role="status"
+        className="text-small text-[color:var(--ink-60)] border-b border-[color:var(--ink-12)] px-6 py-3"
+      >
+        자동으로 정리한 초안이에요. 공개 스토어는 아직 생성되지 않았어요.
+      </p>
+
+      <div className="px-6 py-5 flex flex-col gap-5">
+        <p className="text-body">{positioningSentence}</p>
+
+        <dl className="grid grid-cols-1 md:grid-cols-3 gap-0 border border-[color:var(--ink-12)]">
+          <div className="px-4 py-3 border-b md:border-b-0 md:border-r border-[color:var(--ink-12)] flex flex-col gap-1">
+            <dt className="text-caption text-[color:var(--ink-60)]">
+              공개 가능 리스팅
+            </dt>
+            <dd className="text-title">{publicListingCount}</dd>
+          </div>
+          <div className="px-4 py-3 border-b md:border-b-0 md:border-r border-[color:var(--ink-12)] flex flex-col gap-1">
+            <dt className="text-caption text-[color:var(--ink-60)]">
+              카테고리 포커스
+            </dt>
+            <dd className="flex flex-wrap gap-2">
+              {categoryFocus.length === 0 ? (
+                <span className="text-small text-[color:var(--ink-60)]">
+                  아직 없어요
+                </span>
+              ) : (
+                categoryFocus.map((c) => (
+                  <span
+                    key={`focus-${c}`}
+                    className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-80)]"
+                  >
+                    {CATEGORY_LABEL[c]}
+                  </span>
+                ))
+              )}
+            </dd>
+          </div>
+          <div className="px-4 py-3 flex flex-col gap-1">
+            <dt className="text-caption text-[color:var(--ink-60)]">
+              주요 수령 권역
+            </dt>
+            <dd className="flex flex-wrap gap-2">
+              {pickupAreas.length === 0 ? (
+                <span className="text-small text-[color:var(--ink-60)]">
+                  아직 없어요
+                </span>
+              ) : (
+                pickupAreas.map((p) => (
+                  <span
+                    key={`pickup-${p}`}
+                    className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-80)]"
+                  >
+                    {p}
+                  </span>
+                ))
+              )}
+            </dd>
+          </div>
+        </dl>
+
+        {improvementNudges.length > 0 ? (
+          <div className="flex flex-col gap-2 border-t border-[color:var(--ink-12)] pt-4">
+            <span className="text-caption text-[color:var(--ink-60)]">
+              다음에 해보면 좋은 것
+            </span>
+            <ul className="flex flex-col gap-1 text-small">
+              {improvementNudges.map((n) => (
+                <li key={`nudge-${n}`}>· {n}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
+      </div>
+
+      <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
+        이 초안은 셀러 본인에게만 보여요. 공개 스토어 페이지는 준비가 되면
+        별도로 안내될 예정이에요.
       </p>
     </section>
   );

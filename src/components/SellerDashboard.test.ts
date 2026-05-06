@@ -253,3 +253,114 @@ describe("SellerDashboard — handleServerRespond (parent handler)", () => {
     }
   });
 });
+
+describe("SellerDashboard — seller store preview panel (Bundle 4 Slice 2)", () => {
+  it("imports the deterministic seller-store preview helpers from the marketplace intelligence service", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/lib\/services\/marketplaceIntelligenceService["']/,
+    );
+    expect(IMPORT_BLOB).toMatch(/deriveSellerStorePreview/);
+    expect(IMPORT_BLOB).toMatch(/storeTypeLabel/);
+    expect(IMPORT_BLOB).toMatch(/SellerStorePreview/);
+  });
+
+  it("computes the preview only when chatIntakeMode === 'server' AND the listings envelope is server-backed", () => {
+    // The memo short-circuits to null in local mode and on either
+    // envelope being absent / `error`. A regression that wires
+    // local-mock fixtures into the preview would surface here.
+    expect(SRC).toMatch(
+      /sellerStorePreview[\s\S]*?chatIntakeMode\s*!==\s*["']server["'][\s\S]*?return\s+null/,
+    );
+    expect(SRC).toMatch(
+      /sellerStorePreview[\s\S]*?serverListingsState[\s\S]*?kind\s*!==\s*["']server["'][\s\S]*?return\s+null/,
+    );
+  });
+
+  it("only forwards the safe { category } / { pickupArea, status } subsets to the deterministic generator", () => {
+    // The projections into deriveSellerStorePreview must NOT echo
+    // `id`, `itemName`, `prices`, `createdAt`, `updatedAt`, or
+    // any borrower-side field. We assert it strictly on the
+    // sellerStorePreview useMemo block.
+    const start = SRC.indexOf("const sellerStorePreview = useMemo");
+    expect(start).toBeGreaterThan(0);
+    // End at the closing `}, [chatIntakeMode, ...]);` of the memo
+    // (next non-trivial useMemo / function declaration).
+    const end = SRC.indexOf("\n  const seedMockData", start);
+    expect(end).toBeGreaterThan(start);
+    const block = SRC.slice(start, end);
+    // The listings projection passes only `category`.
+    expect(block).toMatch(
+      /listings:[\s\S]*?\.map\(\(l\)\s*=>\s*\(\{\s*category:\s*l\.category[\s\S]*?\}\)\)/,
+    );
+    // The requests projection (computed into `requestsForPreview`
+    // before being forwarded) passes only `pickupArea` + `status`.
+    expect(block).toMatch(
+      /\.requests\.map\(\(r\)\s*=>\s*\(\{\s*pickupArea:\s*r\.pickupArea[\s\S]*?status:\s*r\.status[\s\S]*?\}\)\)/,
+    );
+    // No id / amount / payment / borrower-side field forwarded.
+    expect(block).not.toMatch(/borrowerDisplayName/);
+    expect(block).not.toMatch(/borrowerId/);
+    expect(block).not.toMatch(/sellerPayout/);
+    expect(block).not.toMatch(/borrowerTotal/);
+    expect(block).not.toMatch(/safetyDeposit/);
+    expect(block).not.toMatch(/rentalFee/);
+    expect(block).not.toMatch(/itemName/);
+  });
+
+  it("renders a non-authoritative panel header with the documented Korean copy", () => {
+    expect(SRC).toContain("셀러 스토어 초안");
+    expect(SRC).toContain(
+      "자동으로 정리한 초안이에요. 공개 스토어는 아직 생성되지 않았어요.",
+    );
+    expect(SRC).toContain(
+      "이 초안은 셀러 본인에게만 보여요. 공개 스토어 페이지는 준비가 되면",
+    );
+  });
+
+  it("renders the three preview sections (공개 가능 리스팅 / 카테고리 포커스 / 주요 수령 권역)", () => {
+    expect(SRC).toContain("공개 가능 리스팅");
+    expect(SRC).toContain("카테고리 포커스");
+    expect(SRC).toContain("주요 수령 권역");
+    expect(SRC).toContain("다음에 해보면 좋은 것");
+  });
+
+  it("does NOT render strong-authority pill styling inside the preview panel (uses dashed tokens)", () => {
+    const start = SRC.indexOf("function SellerStorePreviewPanel");
+    expect(start).toBeGreaterThan(0);
+    // Slice strictly to the function body to avoid sibling
+    // functions (ServerRequestsBlock etc.) that legitimately use
+    // the filled-black pill style.
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    expect(block).toMatch(/border-dashed/);
+    expect(block).not.toMatch(/bg-black\s+text-white/);
+  });
+
+  it("never emits regulated-language phrases anywhere in the panel function body", () => {
+    const start = SRC.indexOf("function SellerStorePreviewPanel");
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    for (const banned of [
+      "결제 완료",
+      "결제 처리",
+      "대여 확정",
+      "대여 완료",
+      "보증금 청구",
+      "보험",
+      "보장",
+      "환불",
+      "정산 완료",
+    ]) {
+      expect(block).not.toContain(banned);
+    }
+  });
+
+  it("renders the preview section conditionally on sellerStorePreview being non-null", () => {
+    // The JSX guard must be `sellerStorePreview ? (...) : null` so
+    // a local-mode dashboard (preview === null) never shows the
+    // panel.
+    expect(SRC).toMatch(
+      /\{\s*sellerStorePreview\s*\?\s*\([\s\S]*?<SellerStorePreviewPanel[\s\S]*?:\s*null\s*\}/,
+    );
+  });
+});

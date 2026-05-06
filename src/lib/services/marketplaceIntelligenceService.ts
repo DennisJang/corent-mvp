@@ -52,7 +52,7 @@
 //     the safe DTO and never add information the DTO doesn't
 //     already imply.
 
-import type { CategoryId } from "@/domain/categories";
+import { CATEGORY_LABEL, type CategoryId } from "@/domain/categories";
 import type { SearchIntent } from "@/domain/intents";
 import type { PublicListing } from "@/domain/listings";
 import type {
@@ -64,6 +64,7 @@ import type {
   RenterIntentSignal,
   SellerStoreIntelligenceSignal,
   SellerStoreType,
+  SignalProvenance,
 } from "@/domain/marketplaceIntelligence";
 
 // Deterministic provenance for every generator in this module. The
@@ -306,6 +307,206 @@ export function explainMatch(
     // the renter.
     reasons: dedupedReasons.slice(0, 5),
     cautions: dedupedCautions.slice(0, 2),
+    provenance: PROVENANCE,
+  };
+}
+
+// --------------------------------------------------------------
+// Seller store preview (Bundle 4 Slice 2).
+// --------------------------------------------------------------
+//
+// Deterministic preview of the seller's *would-be* public store. The
+// SellerDashboard consumes it to render a calm "셀러 스토어 초안"
+// panel that is explicitly NOT a public surface: there is no
+// `/sellers/[sellerId]` server-backed route in this slice; the panel
+// is the seller's private view only.
+//
+// Why a separate entry point (vs. reusing
+// `deriveSellerStoreIntelligenceSignal`):
+//
+//   - The dashboard already operates on tightly-scoped server DTOs
+//     (`SellerDashboardListing`, `SellerDashboardRequest`) that do
+//     NOT carry `sellerId`, exact addresses, or borrower UUIDs. We
+//     accept those minimal shapes here so the panel can render
+//     without widening any existing DTO. The action layer is the
+//     authorization gate (it filters by the resolved seller's id);
+//     this generator is a pure projection over already-safe data.
+//
+//   - This entry point also derives a Korean positioning sentence
+//     and a small, calm list of improvement nudges. These are
+//     deterministic and drawn from a closed vocabulary; the
+//     `human_reviewed` and `llm_candidate` channels are reserved
+//     in the type system for a future slice.
+//
+// Hard rules — encoded in the input shape:
+//
+//   - The function never sees private fields. The listing-side
+//     input only declares `category`; the request-side input only
+//     declares `pickupArea` (already coarse, ≤ 60 chars at the DB
+//     level) and `status`. No borrower id, no exact address, no
+//     payment session id, no settlement reason, no admin notes.
+//
+//   - No copy phrase implies confirmed rental, payment completion,
+//     deposit charge, refund, insurance, guarantee, or settlement.
+//     The improvement nudges are drawn from a vocabulary defined
+//     here and reviewed in PR.
+
+// Allowlisted view of one seller-owned listing for the preview.
+// Mirrors `SellerDashboardListing` but only declares the field we
+// actually read. Adding a field here is a deliberate decision.
+export type SellerStorePreviewListing = {
+  category: CategoryId;
+};
+
+// Allowlisted view of one incoming request for the preview. The
+// dashboard's `SellerDashboardRequest` already drops the borrower
+// UUID and exposes only a coarse pickup area; we re-declare the
+// minimal subset here.
+export type SellerStorePreviewRequest = {
+  pickupArea: string | null;
+  status: string;
+};
+
+export type SellerStorePreviewInput = {
+  listings: ReadonlyArray<SellerStorePreviewListing>;
+  // Optional. When omitted, pickup areas come back empty and the
+  // pending-response nudge does not fire. The action layer may pass
+  // `[]` (empty array) when the requests envelope is `local` /
+  // `error`; the generator treats those identically to "no requests
+  // available".
+  requests?: ReadonlyArray<SellerStorePreviewRequest>;
+};
+
+export type SellerStorePreview = {
+  storeType: SellerStoreType;
+  publicListingCount: number;
+  // Top 3 categories by listing frequency, sorted desc by count
+  // then alphabetical.
+  categoryFocus: CategoryId[];
+  // Top 3 pickup areas seen across the seller's incoming requests,
+  // sorted alphabetically. Coarse text only.
+  pickupAreas: string[];
+  // Calm Korean positioning sentence. Always begins with a
+  // non-authoritative framing (no "보장", "보험", "확정").
+  positioningSentence: string;
+  // Up to 3 calm Korean improvement nudges. Always
+  // non-authoritative.
+  improvementNudges: string[];
+  provenance: SignalProvenance;
+};
+
+
+// Closed vocabulary of nudges. The generator picks a deterministic
+// subset for each input; surfaces render whichever ones come back.
+const NUDGE_NEEDS_FIRST_LISTING =
+  "리스팅을 1개 이상 등록해 보세요.";
+const NUDGE_RESPOND_FIRST = "받은 요청에 먼저 응답해 주세요.";
+const NUDGE_CHECK_COMPONENTS =
+  "구성품 사진과 설명을 확인해 주세요.";
+const NUDGE_DIVERSIFY_PICKUP =
+  "수령 권역을 한두 곳으로 정리해 보세요.";
+
+// Korean labels for the store-type taxonomy. Surfaces should render
+// these instead of the raw enum so a future translation pass has
+// one place to change.
+export function storeTypeLabel(type: SellerStoreType): string {
+  switch (type) {
+    case "casual":
+      return "가벼운 시도";
+    case "repeat_light":
+      return "반복 시도";
+    case "micro_store":
+      return "마이크로 스토어";
+  }
+}
+
+function positioningSentenceFor(
+  storeType: SellerStoreType,
+  topCategory: CategoryId | undefined,
+): string {
+  // Universal CoRent framing — never claims rental confirmation,
+  // payment, or settlement.
+  const lead = "사기 전에 며칠 써보기를 돕는 셀러로 ";
+  if (storeType === "casual") {
+    return `${lead}이제 막 시작했어요. 가벼운 시도부터 정리해 보세요.`;
+  }
+  const focus = topCategory ? CATEGORY_LABEL[topCategory] : "여러 카테고리";
+  if (storeType === "repeat_light") {
+    return `${lead}${focus} 중심으로 반복 시도를 쌓아가는 단계예요.`;
+  }
+  return `${lead}${focus} 중심의 마이크로 스토어로 운영해 볼 수 있는 단계예요.`;
+}
+
+export function deriveSellerStorePreview(
+  input: SellerStorePreviewInput,
+): SellerStorePreview {
+  const listings = input.listings ?? [];
+  const requests = input.requests ?? [];
+
+  // Category-focus tally (listings only). Same algorithm as
+  // `deriveSellerStoreIntelligenceSignal`, kept inline here so this
+  // entry point is independent of the `PublicListing` shape.
+  const categoryCounts = new Map<CategoryId, number>();
+  for (const l of listings) {
+    categoryCounts.set(l.category, (categoryCounts.get(l.category) ?? 0) + 1);
+  }
+  const categoryFocus: CategoryId[] = [...categoryCounts.entries()]
+    .sort((a, b) => {
+      if (b[1] !== a[1]) return b[1] - a[1];
+      return a[0].localeCompare(b[0]);
+    })
+    .slice(0, 3)
+    .map(([cat]) => cat);
+
+  // Pickup areas come from the seller's INCOMING requests, not the
+  // listings themselves (the seller-listing DTO doesn't carry pickup
+  // area). Dedup + sort + cap to 3.
+  const pickupAreaSet = new Set<string>();
+  for (const r of requests) {
+    if (r.pickupArea && r.pickupArea.length > 0) {
+      pickupAreaSet.add(r.pickupArea);
+    }
+  }
+  const pickupAreas = [...pickupAreaSet].sort().slice(0, 3);
+
+  const storeType = classifyStoreType(listings.length);
+
+  const positioningSentence = positioningSentenceFor(
+    storeType,
+    categoryFocus[0],
+  );
+
+  // Improvement nudges. Each branch is deterministic; the closed
+  // vocabulary above caps the surface area so a copy regression can
+  // never smuggle in an authority phrase.
+  const nudges: string[] = [];
+  if (listings.length === 0) {
+    nudges.push(NUDGE_NEEDS_FIRST_LISTING);
+  }
+  // Pending-response nudge: any request still in `requested` state
+  // is something the seller can act on right now via the
+  // ServerRequestsBlock approve/decline flow.
+  const hasPendingRequest = requests.some((r) => r.status === "requested");
+  if (hasPendingRequest) {
+    nudges.push(NUDGE_RESPOND_FIRST);
+  }
+  // Always offer the universal "check components" nudge so the
+  // panel never reads as empty advice.
+  nudges.push(NUDGE_CHECK_COMPONENTS);
+  // Pickup-area diversification nudge — only when the seller has
+  // received requests across more than 2 distinct pickup areas. The
+  // intent is calm: cluster, don't expand.
+  if (pickupAreaSet.size > 2) {
+    nudges.push(NUDGE_DIVERSIFY_PICKUP);
+  }
+
+  return {
+    storeType,
+    publicListingCount: listings.length,
+    categoryFocus,
+    pickupAreas,
+    positioningSentence,
+    improvementNudges: nudges.slice(0, 3),
     provenance: PROVENANCE,
   };
 }
