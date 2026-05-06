@@ -345,6 +345,37 @@ describe("/auth/password-sign-in — password never leaks", () => {
     }
   });
 
+  it("email is never passed to the logger payload", async () => {
+    const email = "secret-tester@example.com";
+
+    // Failure (Supabase error) path
+    signInWithPassword.mockResolvedValueOnce({
+      data: null,
+      error: { code: "invalid_credentials", message: "redacted" },
+    } as never);
+    await POST(jsonRequest({ email, password: "hunter2" }));
+
+    // Env-missing path
+    factoryMock.mockResolvedValueOnce(null);
+    await POST(jsonRequest({ email, password: "hunter2" }));
+
+    for (const call of logServerWarn.mock.calls) {
+      const [event, payload] = call as [string, Record<string, unknown> | undefined];
+      expect(event).not.toContain(email);
+      expect(event).not.toContain("@");
+      if (payload) {
+        for (const [key, value] of Object.entries(payload)) {
+          // Defense in depth — neither key nor value carries the email.
+          expect(key).not.toContain("@");
+          if (typeof value === "string") {
+            expect(value).not.toContain(email);
+            expect(value).not.toContain("@");
+          }
+        }
+      }
+    }
+  });
+
   it("ignores forged authority fields on the payload (role / capability / sellerId / founder / is_admin)", async () => {
     const r = await POST(
       jsonRequest({

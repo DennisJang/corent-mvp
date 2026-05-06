@@ -59,6 +59,50 @@ and `요청 단계`.
 - Seller dashboard readiness should use seller-owned safe fields only.
   If it needs more precision later, add booleans/counts before raw text.
 
+## Password Sign-in Posture
+
+The closed-alpha exposes both magic-link and email/password sign-in. Both are
+sign-in only — never signup, never profile or capability provisioning.
+
+- Password login is for **existing provisioned closed-alpha accounts only**.
+  Capability remains row-presence in `seller_profiles` / `borrower_profiles`,
+  manually seeded by the founder per
+  `docs/corent_closed_alpha_provisioning_workflow.md`.
+- **No self-serve signup.** Neither `/auth/password-sign-in` nor
+  `/admin/auth/password-sign-in` calls `signUp`, sets `shouldCreateUser`, or
+  inserts into `profiles` / `seller_profiles` / `borrower_profiles`. A static
+  source-level test (`src/app/auth/password-sign-in/import-boundary.test.ts`)
+  pins this against drift.
+- **No auto profile provisioning.** A user who authenticates without a
+  `profiles` row hits the existing `signed_in_no_profile` panel — the route
+  never repairs the gap.
+- **Magic-link fallback remains.** The `/auth/sign-in` and
+  `/admin/auth/sign-in` routes are unchanged. Both `/login` and `/admin/login`
+  render the magic-link form below the password form so testers can fall back
+  without losing the flow.
+- **Founder/admin authority remains allowlist-gated.**
+  `/admin/auth/password-sign-in` does not import or call
+  `requireFounderSession` and does not set founder / role / capability fields
+  on the session. `/admin/cockpit` decides authority per-request via
+  `requireFounderSession`, which checks the server-side
+  `FOUNDER_ADMIN_EMAIL_ALLOWLIST` against the session email at every request.
+  As defense in depth, the admin password route still gates on the allowlist
+  before calling Supabase, so a non-allowlisted email returns the same
+  `pe=invalid` envelope as a wrong password — no allowlist disclosure.
+- **Open-redirect guarded.** The user route uses `safeUserNextPath` (rejects
+  `/admin/*`); the admin route uses `safeAdminNextPath` (requires `/admin`).
+- **Password and email never logged.** Both routes only emit non-secret
+  reason codes (`user_auth_password_sign_in_no_client` / `_failed`,
+  `admin_auth_password_sign_in_no_client` / `_failed`) plus `err_code` from
+  Supabase. The password is also never present in the redirect URL.
+- **Password reset is out of scope.** No in-app reset surface yet. Resets are
+  founder-driven via Supabase Studio's user-row → **Reset password** action.
+  Future docs-only follow-up: an in-app reset slice with security review.
+- **Agents do not configure Supabase remotely.** Enabling the email/password
+  provider, setting passwords, marking `email_confirmed_at`, and creating
+  `profiles` / `seller_profiles` / `borrower_profiles` rows are
+  founder-only Studio actions. The agent's role is local code + docs only.
+
 ## Smoke Checklist Links
 
 - Remote smoke ops: `docs/corent_closed_alpha_smoke_ops_checklist.md`
@@ -83,5 +127,7 @@ operations kit before patching anything:
   `docs/corent_readiness_copy_experiment_backlog.md`
 - Category wedge prioritization:
   `docs/corent_category_wedge_research_checklist.md`
+- Combined password-login + readiness Round 1 script:
+  `docs/smoke_runs/2026-05-06_password_login_readiness_round1.md`
 
 The kit is docs-only and does not relax any of the rules in this gate.

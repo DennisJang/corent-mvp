@@ -364,4 +364,63 @@ describe("/admin/auth/password-sign-in — password never leaks", () => {
     );
     expect(env.headers.get("location") ?? "").not.toContain(password);
   });
+
+  it("password is never passed to the logger payload", async () => {
+    process.env.FOUNDER_ADMIN_EMAIL_ALLOWLIST = "founder@example.com";
+    const password = "Founder-secret-pw!";
+
+    // Failure (Supabase error) path
+    signInWithPassword.mockResolvedValueOnce({
+      data: null,
+      error: { code: "invalid_credentials", message: "redacted" },
+    } as never);
+    await POST(jsonRequest({ email: "founder@example.com", password }));
+
+    // Env-missing path
+    factoryMock.mockResolvedValueOnce(null);
+    await POST(jsonRequest({ email: "founder@example.com", password }));
+
+    for (const call of logServerWarn.mock.calls) {
+      const [event, payload] = call as [string, Record<string, unknown> | undefined];
+      expect(event).not.toContain(password);
+      if (payload) {
+        for (const value of Object.values(payload)) {
+          if (typeof value === "string") {
+            expect(value).not.toContain(password);
+          }
+        }
+      }
+    }
+  });
+
+  it("email is never passed to the logger payload", async () => {
+    process.env.FOUNDER_ADMIN_EMAIL_ALLOWLIST = "secret-founder@example.com";
+    const email = "secret-founder@example.com";
+
+    // Failure (Supabase error) path
+    signInWithPassword.mockResolvedValueOnce({
+      data: null,
+      error: { code: "invalid_credentials", message: "redacted" },
+    } as never);
+    await POST(jsonRequest({ email, password: "hunter2" }));
+
+    // Env-missing path
+    factoryMock.mockResolvedValueOnce(null);
+    await POST(jsonRequest({ email, password: "hunter2" }));
+
+    for (const call of logServerWarn.mock.calls) {
+      const [event, payload] = call as [string, Record<string, unknown> | undefined];
+      expect(event).not.toContain(email);
+      expect(event).not.toContain("@");
+      if (payload) {
+        for (const [key, value] of Object.entries(payload)) {
+          expect(key).not.toContain("@");
+          if (typeof value === "string") {
+            expect(value).not.toContain(email);
+            expect(value).not.toContain("@");
+          }
+        }
+      }
+    }
+  });
 });
