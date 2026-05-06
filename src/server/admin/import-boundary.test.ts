@@ -403,6 +403,69 @@ describe("SSR auth module boundary", () => {
   });
 });
 
+describe("LLM adapter boundary (Bundle 4 Slice 3)", () => {
+  it("@/server/llm is never imported by src/components/**", () => {
+    const offenders: string[] = [];
+    for (const f of ALL_FILES) {
+      const rel = relative(SRC_ROOT, f);
+      if (!rel.startsWith("components/")) continue;
+      const src = readRel(f);
+      if (src.includes("@/server/llm")) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("@/server/llm is never imported by src/lib/client/**", () => {
+    const offenders: string[] = [];
+    for (const f of ALL_FILES) {
+      const rel = relative(SRC_ROOT, f);
+      if (!rel.startsWith("lib/client/")) continue;
+      const src = readRel(f);
+      if (src.includes("@/server/llm")) {
+        offenders.push(rel);
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
+  it("@/server/llm modules never reference an LLM provider SDK package or env var", () => {
+    // No provider SDK imports, no API key reads, no endpoint
+    // env vars. The mock adapter must remain network-free until
+    // a real provider lands behind the same interface. We strip
+    // line comments before scanning so explanatory prose may
+    // mention provider names without tripping the boundary.
+    const targets = [
+      join(SRC_ROOT, "server", "llm", "types.ts"),
+      join(SRC_ROOT, "server", "llm", "mockAdapter.ts"),
+      join(SRC_ROOT, "server", "llm", "normalize.ts"),
+      join(SRC_ROOT, "server", "llm", "cost.ts"),
+      join(SRC_ROOT, "server", "llm", "index.ts"),
+    ];
+    for (const file of targets) {
+      const fullSrc = readRel(file);
+      const runtime = fullSrc.replace(/^\s*\/\/.*$/gm, "");
+      expect(runtime).not.toMatch(/process\.env\./);
+      for (const banned of [
+        "openai",
+        "@anthropic-ai/sdk",
+        "anthropic",
+        "@google/generative-ai",
+        "@google-cloud/aiplatform",
+        "cohere-ai",
+        "node-fetch",
+        "axios",
+        "undici",
+      ]) {
+        expect(runtime).not.toMatch(
+          new RegExp(`from\\s+["']${banned}["']`),
+        );
+      }
+    }
+  });
+});
+
 describe("NEXT_PUBLIC_* deny-list (security review §3.20)", () => {
   const DENY = /(SERVICE_ROLE|SECRET|PRIVATE|TOSS|OPENAI|ADMIN|ALLOWLIST)/i;
 
