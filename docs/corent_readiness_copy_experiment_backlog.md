@@ -289,6 +289,89 @@ under the readiness vocabulary).
 > tester misread (`보증금은 얼마예요?`). Ship at most one. Do **not**
 > ship anywhere outside the closed readiness vocabulary.
 
+## 10. Wanted Try Request — `/search` empty state
+
+**Surface**: `/search` empty result panel + the wanted-try-request
+form that opens from it. Plan: [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md).
+
+**Source string in code (proposed for PR 2)**: `EmptyResults` in
+[`SearchResults.tsx`](../src/components/SearchResults.tsx) +
+new `WantedTryRequestForm` component. New strings must round-
+trip through this section before shipping; new strings invented
+inline at render time fail review.
+
+The current `EmptyResults` copy ("조건에 맞는 물건이 아직 없어요.
+조건을 줄이면 더 많은 결과가 나와요…") is a **dead-end**. The
+variants below replace it with try-before-buy framing + a
+demand-capture CTA.
+
+**Hypothesis labels** apply per row (less scary / more concrete /
+more premium / more buyer-actionable). `more seller-safe` is not
+relevant here because there is no seller-facing copy in the
+slice.
+
+### 10.1 Empty-state CTA panel (replaces current `EmptyResults`)
+
+| ID | Hypothesis | Heading | Body | Primary CTA label | Winner signal |
+| --- | --- | --- | --- | --- | --- |
+| 10A | `more buyer-actionable` | `조건에 맞는 매물이 아직 없어요.` | "사기 전에 며칠 써보고 싶다는 생각은 그대로 유효해요. 같은 물건을 가진 셀러가 보면 다시 안내드려요. 자동으로 매칭되거나 결제·픽업·정산이 시작되지는 않아요." | `써보고 싶다고 알리기` | wanted-request submit count per round |
+| 10B | `more concrete` | `이 물건은 아직 등록된 매물이 없어요.` | "어떤 물건을 사기 전에 써보고 싶은지 한 줄로 남겨 주세요. 같은 물건을 가진 셀러가 보면 운영자가 다시 안내드려요." | `써보고 싶다고 알리기` | Q1 sentiment shift on category-known queries |
+| 10C | `less scary` | `매물이 비어 있어요. 그래도 신호는 받을 수 있어요.` | "사기 전에 며칠만 써볼 수 있으면 좋겠다는 신호를 남겨 주세요. 자동 매칭은 아니에요." | `신호 남기기` | submit rate on empty queries |
+
+### 10.2 Form heading + sub-caption
+
+| ID | Hypothesis | Heading | Sub-caption | Winner signal |
+| --- | --- | --- | --- | --- |
+| 10D | `more concrete` | `이 물건을 사기 전에 써보고 싶어요` | "자동으로 정리한 안내예요. 카테고리·아이템 이름은 한 번 더 확인해 주세요. 이 단계에서는 결제·픽업·정산이 시작되지 않아요." | form completion rate |
+| 10E | `more buyer-actionable` | `사기 전 며칠 써볼 물건을 알려 주세요` | "운영자가 먼저 확인한 뒤, 같은 물건을 가진 셀러가 보면 다시 안내드려요. 자동 매칭·결제는 아직 시작되지 않아요." | form completion rate |
+
+### 10.3 Helper copy (above form fields)
+
+| ID | Hypothesis | Variant | Winner signal |
+| --- | --- | --- | --- |
+| 10F | `more concrete` | "적어 주신 내용은 운영자가 먼저 확인해요. 같은 물건을 가진 셀러가 보면 다시 안내드려요. 응답을 받고 싶다면 이메일을 함께 적어 주세요. 이메일은 선택이에요." | contact_email opt-in rate |
+| 10G | `less scary` | "어떤 물건인지, 며칠 써보고 싶은지 짧게만 적어 주셔도 돼요. 이메일은 선택이에요. 자동으로 셀러가 연결되지는 않아요." | submit rate |
+
+### 10.4 Submit success
+
+| ID | Hypothesis | Variant | Winner signal |
+| --- | --- | --- | --- |
+| 10H | `more buyer-actionable` | "받았어요. 같은 물건을 가진 셀러가 보면 다시 안내드려요. 자동으로 매칭되거나 결제가 시작되지는 않아요. 아래에서 비슷한 다른 물건도 살펴볼 수 있어요." | post-submit click-through to `/search` or `/listings` |
+| 10I | `less scary` | "신호를 받았어요. 운영자가 먼저 확인하고, 매칭이 가능한 시점이 되면 다시 안내드려요." | Q3 (결제 시작 인식) sentiment |
+| 10J | `more concrete` | "기록했어요. 같은 물건이 들어오거나 같은 물건을 가진 셀러가 보면 다시 안내드려요. 결제·픽업·정산은 그 이후 단계예요." | tester quote quality |
+
+### 10.5 Mock / local-mode caption
+
+**Do not invent a new variant for mock mode.** Re-use the
+existing `FeedbackIntakeCard` caption verbatim:
+
+> 데모 환경에서는 저장되지 않아요. 클로즈드 알파 환경에서만
+> 저장돼요.
+
+This keeps a single mock-mode message across the feedback / wanted
+surfaces and avoids the closed-vocabulary drift that a new string
+would introduce.
+
+### 10.6 Future seller demand board (deferred — design copy only)
+
+These are **not for PR 2**. They belong to PR 4 / future after
+the demand signal validates and a seller-facing DTO projection
++ RLS read policy land. Listed here so the founder has reviewed
+copy ready when that PR opens.
+
+| ID | Surface | Variant | Notes |
+| --- | --- | --- | --- |
+| 10K-future | Seller demand board heading | `써보고 싶다는 신호 — 베타` | Banlist clean. Stresses 신호 = signal, not match. |
+| 10L-future | Sub-caption | "같은 카테고리에 등록된 셀러에게 보이는 비식별 신호 묶음이에요. 자동으로 매칭되거나 결제·픽업·정산이 시작되지는 않아요." | Pin "비식별" in copy. Pin negation. |
+| 10M-future | Per-row CTA | `이 물건 가지고 있어요` | Click sends a non-promissory signal to the founder, not the borrower. |
+| 10N-future | Per-row CTA caption | "클릭은 운영자에게 신호를 보내요. 자동 연결은 아니에요." | Negate auto-match. |
+
+> Reminder: future variants in §10.6 must NOT be added to any
+> render path until the seller demand board PR opens with its
+> own DTO projection + RLS design. Adding the heading without
+> the projection would imply seller-facing visibility that
+> doesn't exist yet.
+
 ---
 
 ## How to use this backlog in a round

@@ -103,6 +103,58 @@ sign-in only — never signup, never profile or capability provisioning.
   `profiles` / `seller_profiles` / `borrower_profiles` rows are
   founder-only Studio actions. The agent's role is local code + docs only.
 
+## Wanted Try Request Posture
+
+CoRent's cold-start wedge captures demand when `/search` returns no
+matches, instead of dead-ending the user. The MVP rides on the
+existing `feedback_submissions` table with `kind = 'wanted_item'`.
+Plan: `docs/corent_wanted_try_request_slice_plan.md`.
+
+- **Storage**: re-uses `feedback_submissions` with `kind =
+  'wanted_item'`. No new table, no migration, no new RLS policy, no
+  new public DTO until the demand signal validates across multiple
+  rounds.
+- **No automatic matching.** No copy, code path, or future LLM
+  candidate may claim that the platform matches a wanted request to
+  a seller. Auto-match is forbidden phrasing alongside the existing
+  banlist (`보증` / `보험` / `결제 완료` / etc.). Surfaces always
+  read as conditional ("같은 물건을 가진 셀러가 보면 다시
+  안내드려요"), never promissory.
+- **No seller contact exposure.** Borrower email, `profile_id`,
+  `borrower_id`, raw free-text `message`, and any field traceable
+  to a borrower's identity are **never** rendered on a seller-facing
+  surface. The founder cockpit (`/admin/cockpit`) is founder-gated
+  by `requireFounderSession` and is the only reader of contact
+  email. A future seller demand board requires its own DTO
+  projection + RLS read policy + security review before any seller
+  visibility is built.
+- **No payment / deposit / insurance / guarantee framing.** The
+  closed-alpha banlist applies in full to every wanted-try-request
+  surface — empty-state CTA, form heading, helper copy, submit
+  success, and any future seller-side surface. Pinned by
+  `src/lib/copy/copyGuardrails.test.ts`.
+- **No schema until the signal validates.** A separate
+  `wanted_try_requests` table, a new `wanted_try_status` enum,
+  structured `desired_duration_days` / `price_ceiling_krw` /
+  `region_hint` columns, and any seller-side projection are
+  deliberately deferred. The MVP ships with the existing
+  `feedback_submissions` shape; structured fields stay in the
+  free-text `message` until founder-mediated triage demonstrates
+  the wedge.
+- **Provenance stays deterministic.** The current parser
+  (`searchService.parse` + `mockAIParser`) and the readiness card
+  (`tryBeforeBuyReadinessService`) provide all hints in this slice.
+  Any future LLM-based intent extraction or wanted ↔ listing match
+  scoring lands behind the existing `LLMAdapter` interface with
+  `provenance: "llm_candidate"`, gated by a separate security
+  review.
+- **Anonymous-OK, no auto-provisioning.** The intake action
+  (`submitFeedbackAction`) is anonymous-friendly. A signed-in
+  caller's `profile_id` is server-derived; the payload type
+  forbids client-supplied `profile_id`, `id`, `status`,
+  `created_at`. The slice does not create `profiles`,
+  `seller_profiles`, or `borrower_profiles` rows.
+
 ## Smoke Checklist Links
 
 - Remote smoke ops: `docs/corent_closed_alpha_smoke_ops_checklist.md`
@@ -129,5 +181,7 @@ operations kit before patching anything:
   `docs/corent_category_wedge_research_checklist.md`
 - Combined password-login + readiness Round 1 script:
   `docs/smoke_runs/2026-05-06_password_login_readiness_round1.md`
+- Wanted Try Request slice plan:
+  `docs/corent_wanted_try_request_slice_plan.md`
 
 The kit is docs-only and does not relax any of the rules in this gate.
