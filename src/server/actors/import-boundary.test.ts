@@ -212,6 +212,16 @@ const PROFILE_LOOKUP_PATTERNS: RegExp[] = [
 
 const ALLOWED_PROFILE_LOOKUP_IMPORTERS = new Set<string>([
   "actors/resolveServerActor.ts",
+  // `auth/sessionSummary.ts` is the display-only login-surface
+  // read used by `/login` and `/admin/login` to render "logged in
+  // as X with Seller / Borrower / Founder pills". It does NOT make
+  // authorization decisions — every existing authority gate
+  // (`requireFounderSession`, `runIntentCommand`, ownership
+  // asserts) continues to go through `resolveServerActor` (the
+  // first allowlist entry above) or its own dedicated path. The
+  // session summary needs BOTH `hasSeller` and `hasBorrower`
+  // simultaneously, which the resolver does not return.
+  "auth/sessionSummary.ts",
 ]);
 
 describe("server actor seam — profile lookup boundary (PR 5A)", () => {
