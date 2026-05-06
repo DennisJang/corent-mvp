@@ -131,17 +131,65 @@ describe("deriveSellerListingReadiness — publicationReadinessCaption", () => {
     );
   });
 
-  it("treats a 'rejected' row alone (no pre-approved siblings) as 'all decided' (uses approved caption shape)", () => {
-    // No pre-approved rows, so the caption falls through to the
-    // approved branch even though the row was rejected. The
-    // separate rejected line in `readyChecks` carries that signal.
+  it("does NOT use the all-approved success caption when every listing is rejected (rejected-only branch)", () => {
+    // Hardening (Bundle 4 Slice 8): a seller whose only listing
+    // got rejected must not see "모든 리스팅이 공개되어 있어요"
+    // copy — that would read as success authority. Instead the
+    // caption must be neutral / advisory.
     const r = deriveSellerListingReadiness({
       listings: [{ category: "massage_gun", status: "rejected" }],
     });
-    expect(r.publicationReadinessCaption).toContain(
+    expect(r.publicationReadinessCaption).not.toContain(
       "모든 리스팅이 공개되어 있어요",
     );
+    // The rejected line in `readyChecks` continues to carry the
+    // signal so the seller is not surprised.
     expect(r.readyChecks.some((c) => c.includes("보류됐어요"))).toBe(true);
+  });
+
+  it("rejected-only emits a neutral, advisory rejected-only caption", () => {
+    const r = deriveSellerListingReadiness({
+      listings: [{ category: "massage_gun", status: "rejected" }],
+    });
+    // Neutral caption — calls out that nothing is currently
+    // public and invites a re-attempt without claiming authority.
+    expect(r.publicationReadinessCaption).toMatch(/보류|다시 등록|재등록/);
+    // Banlist still holds on the neutral caption.
+    for (const banned of [
+      "보증",
+      "보증금",
+      "보험",
+      "보장",
+      "결제 완료",
+      "결제 진행",
+      "결제 처리",
+      "보증금 청구",
+      "대여 확정",
+      "환불",
+      "정산 완료",
+    ]) {
+      expect(r.publicationReadinessCaption).not.toContain(banned);
+    }
+  });
+
+  it("draft-only emits the neutral pending caption (never the all-approved success caption)", () => {
+    const r = deriveSellerListingReadiness({
+      listings: [{ category: "massage_gun", status: "draft" }],
+    });
+    expect(r.publicationReadinessCaption).toContain("검토");
+    expect(r.publicationReadinessCaption).not.toContain(
+      "모든 리스팅이 공개되어 있어요",
+    );
+  });
+
+  it("empty listings emits the neutral fallback caption (never the all-approved success caption)", () => {
+    const r = deriveSellerListingReadiness({ listings: [] });
+    expect(r.publicationReadinessCaption).toContain(
+      "리스팅을 1개 이상 등록",
+    );
+    expect(r.publicationReadinessCaption).not.toContain(
+      "모든 리스팅이 공개되어 있어요",
+    );
   });
 });
 
@@ -220,7 +268,11 @@ describe("deriveSellerListingReadiness — sort + dedup invariants", () => {
 });
 
 describe("deriveSellerListingReadiness — banlist + leakage probe", () => {
-  it("never emits regulated-language phrases for any category × status combination", () => {
+  it("never emits regulated-language phrases for any category × status combination (full readiness banlist)", () => {
+    // Aligned with the borrower-side service banlist + the UI
+    // tests. A regression that adds "결제 진행" / "결제 처리" /
+    // "보증금 청구" copy here would imply payment or deposit
+    // authority and surface immediately.
     for (const cat of CATEGORIES) {
       for (const status of ALL_STATUSES) {
         const r = deriveSellerListingReadiness({
@@ -229,9 +281,13 @@ describe("deriveSellerListingReadiness — banlist + leakage probe", () => {
         const blob = JSON.stringify(r);
         for (const banned of [
           "보증",
+          "보증금",
           "보험",
           "보장",
           "결제 완료",
+          "결제 진행",
+          "결제 처리",
+          "보증금 청구",
           "대여 확정",
           "환불",
           "정산 완료",

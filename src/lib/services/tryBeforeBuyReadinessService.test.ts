@@ -213,7 +213,11 @@ describe("deriveTryBeforeBuyReadiness — always-on captions", () => {
 });
 
 describe("deriveTryBeforeBuyReadiness — banlist + leakage probe", () => {
-  it("never emits regulated-language phrases anywhere in the card", () => {
+  it("never emits regulated-language phrases anywhere in the card (full readiness banlist)", () => {
+    // Aligned with the readiness UI tests + the seller-side
+    // service banlist. A regression that adds "결제 진행" /
+    // "결제 처리" / "보증금 청구" copy here would imply payment
+    // or deposit authority and surface immediately.
     for (const cat of CATEGORIES) {
       const r = deriveTryBeforeBuyReadiness({
         category: cat.id,
@@ -224,9 +228,13 @@ describe("deriveTryBeforeBuyReadiness — banlist + leakage probe", () => {
       const blob = JSON.stringify(r);
       for (const banned of [
         "보증",
+        "보증금",
         "보험",
         "보장",
         "결제 완료",
+        "결제 진행",
+        "결제 처리",
+        "보증금 청구",
         "대여 확정",
         "환불",
         "정산 완료",

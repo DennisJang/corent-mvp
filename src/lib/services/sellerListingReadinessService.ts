@@ -100,6 +100,12 @@ const PENDING_CAPTION =
 // gate. We do NOT say "보증" / "보험" / "보장" here.
 const ALL_APPROVED_CAPTION =
   "모든 리스팅이 공개되어 있어요. 추천 항목을 정기적으로 다시 확인해 주세요.";
+// Calm caption used when the seller has only rejected listings
+// (no approved, no pending). The all-approved branch would read
+// as misleading success authority here, so we surface a neutral
+// advisory instead. Banlist still applies.
+const REJECTED_ONLY_CAPTION =
+  "모든 리스팅이 운영자 검토에서 보류됐어요. 추천 항목을 확인한 뒤 다시 등록을 시도해 주세요.";
 
 const PRE_APPROVED_STATUSES: ReadonlySet<ListingStatus> = new Set<
   ListingStatus
@@ -150,12 +156,17 @@ export function deriveSellerListingReadiness(
   }
   const missingOrRecommendedChecks = [...recommendations].sort();
 
-  // Publication caption — status-aware, calm copy.
+  // Publication caption — status-aware, calm copy. The
+  // rejected-only branch comes BEFORE the all-approved fallthrough
+  // so a seller whose only listing got rejected never sees
+  // "모든 리스팅이 공개되어 있어요" success copy.
   let publicationReadinessCaption: string;
   if (total === 0) {
     publicationReadinessCaption = EMPTY_CAPTION;
   } else if (preApprovedCount > 0) {
     publicationReadinessCaption = PENDING_CAPTION;
+  } else if (approvedCount === 0 && rejectedCount > 0) {
+    publicationReadinessCaption = REJECTED_ONLY_CAPTION;
   } else {
     publicationReadinessCaption = ALL_APPROVED_CAPTION;
   }
