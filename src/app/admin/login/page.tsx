@@ -39,6 +39,7 @@ type SearchParams = Promise<{
   sent?: string;
   next?: string;
   out?: string;
+  pe?: string;
 }>;
 
 export default async function FounderAdminLoginPage({
@@ -50,6 +51,13 @@ export default async function FounderAdminLoginPage({
   const showError = params.e === "1";
   const showSent = params.sent === "1";
   const showSignedOut = params.out === "1";
+  const passwordError =
+    params.pe === "invalid"
+      ? "password_invalid"
+      : params.pe === "unavailable"
+        ? "password_unavailable"
+        : null;
+  const nextRaw = typeof params.next === "string" ? params.next : "";
 
   const summary = await readCurrentSessionSummary();
 
@@ -72,7 +80,12 @@ export default async function FounderAdminLoginPage({
         ) : null}
 
         {summary.kind === "signed_out" ? (
-          <SignedOutPanel showError={showError} showSent={showSent} />
+          <SignedOutPanel
+            showError={showError}
+            showSent={showSent}
+            passwordError={passwordError}
+            nextRaw={nextRaw}
+          />
         ) : summary.kind === "signed_in_no_profile" ? (
           <SignedInButNoProfilePanel
             email={summary.email}
@@ -95,34 +108,49 @@ export default async function FounderAdminLoginPage({
 function SignedOutPanel({
   showError,
   showSent,
+  passwordError,
+  nextRaw,
 }: {
   showError: boolean;
   showSent: boolean;
+  passwordError: "password_invalid" | "password_unavailable" | null;
+  nextRaw: string;
 }) {
   return (
     <>
       <p className="text-body text-[color:var(--ink-80)]">
-        창업자 전용 매직 링크로 로그인합니다. 입력하신 주소가 허용 목록에
-        있으면 Supabase가 일회성 로그인 링크를 이메일로 보냅니다. 입력하신
-        주소가 허용 목록에 없더라도 동일한 응답이 표시됩니다.
+        등록된 클로즈드 알파 운영자 계정으로 로그인해 주세요. 운영자 권한은
+        로그인만으로 부여되지 않아요. 허용 목록에 등록된 계정만 cockpit에
+        접근할 수 있어요.
       </p>
 
-      {showError ? (
-        <p className="text-small border border-black p-3">
-          로그인 링크를 처리할 수 없습니다. 다시 시도해주세요.
+      {passwordError === "password_invalid" ? (
+        <p
+          role="status"
+          className="text-small border border-black p-3"
+          data-testid="password-error-invalid"
+        >
+          이메일 또는 비밀번호가 일치하지 않아요. 등록된 운영자 계정인지 다시
+          확인해 주세요.
         </p>
       ) : null}
 
-      {showSent ? (
-        <p className="text-small border border-black p-3">
-          요청이 접수되었습니다. 이메일을 확인해주세요.
+      {passwordError === "password_unavailable" ? (
+        <p
+          role="status"
+          className="text-small border border-black p-3"
+          data-testid="password-error-unavailable"
+        >
+          비밀번호 로그인이 일시적으로 준비되지 않았어요. 아래 매직 링크를 사용해
+          주세요.
         </p>
       ) : null}
 
       <form
         method="post"
-        action="/admin/auth/sign-in"
+        action="/admin/auth/password-sign-in"
         className="flex flex-col gap-4"
+        data-testid="password-sign-in-form"
       >
         <label className="flex flex-col gap-2">
           <span className="text-caption">Email</span>
@@ -135,17 +163,79 @@ function SignedOutPanel({
             placeholder="founder@example.com"
           />
         </label>
+        <label className="flex flex-col gap-2">
+          <span className="text-caption">Password</span>
+          <input
+            type="password"
+            name="password"
+            required
+            autoComplete="current-password"
+            minLength={1}
+            maxLength={1024}
+            className="border border-black px-3 py-2 text-body"
+          />
+        </label>
+        {nextRaw ? (
+          <input type="hidden" name="next" value={nextRaw} />
+        ) : null}
         <button
           type="submit"
           className="border border-black px-4 py-2 text-body bg-black text-white"
         >
-          로그인 링크 받기
+          비밀번호로 로그인
         </button>
       </form>
 
+      <div className="border-t border-[color:var(--ink-12)] pt-6 flex flex-col gap-3">
+        <p className="text-caption text-[color:var(--ink-60)]">
+          매직 링크 (백업 경로)
+        </p>
+
+        {showError ? (
+          <p className="text-small border border-black p-3">
+            로그인 링크를 처리할 수 없습니다. 다시 시도해주세요.
+          </p>
+        ) : null}
+
+        {showSent ? (
+          <p className="text-small border border-black p-3">
+            요청이 접수되었습니다. 이메일을 확인해주세요.
+          </p>
+        ) : null}
+
+        <form
+          method="post"
+          action="/admin/auth/sign-in"
+          className="flex flex-col gap-4"
+          data-testid="magic-link-form"
+        >
+          <label className="flex flex-col gap-2">
+            <span className="text-caption">Email</span>
+            <input
+              type="email"
+              name="email"
+              required
+              autoComplete="email"
+              className="border border-black px-3 py-2 text-body"
+              placeholder="founder@example.com"
+            />
+          </label>
+          {nextRaw ? (
+            <input type="hidden" name="next" value={nextRaw} />
+          ) : null}
+          <button
+            type="submit"
+            className="border border-[color:var(--ink-20)] hover:border-black px-4 py-2 text-body bg-white text-black"
+          >
+            로그인 링크 받기
+          </button>
+        </form>
+      </div>
+
       <p className="text-small text-[color:var(--ink-60)]">
         이 페이지는 ENABLE_ANALYTICS_BETA 플래그와 무관하게 운영자 인증
-        용도로만 사용되며, 일반 사용자 회원가입은 제공하지 않습니다.
+        용도로만 사용되며, 일반 사용자 회원가입은 제공하지 않습니다. 허용
+        목록에 없는 계정으로 로그인을 시도해도 동일한 응답이 표시돼요.
       </p>
     </>
   );
