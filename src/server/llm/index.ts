@@ -31,3 +31,13 @@ export {
 } from "./normalize";
 
 export { mockLLMAdapter } from "./mockAdapter";
+
+export { invokeLLMTask } from "./invoke";
+export type {
+  CandidateForTask,
+  InvokeLLMTaskOptions,
+  LLMInvokeFallback,
+  LLMInvokeFallbackReason,
+  LLMInvokeOk,
+  LLMInvokeResult,
+} from "./invoke";
