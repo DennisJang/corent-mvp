@@ -297,3 +297,32 @@ Headline:
 - Security gate: [`docs/corent_security_gate_note.md`](corent_security_gate_note.md)
 - Legal / trust framing: [`docs/corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md)
 - Companion next-actions doc: [`docs/corent_next_actions_2026-05-05.md`](corent_next_actions_2026-05-05.md)
+
+## 10. CoRent Interactive Experience (CIE)
+
+The umbrella plan above ends at "skeleton-passing → product-UX-passing".
+The next layer — turning CoRent's deterministic services into an
+AI-native try-before-buy interface — is captured in a dedicated
+architecture plan:
+
+- [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
+  — 16-section docs-only plan. Defines CIE as an AI-assisted
+  try-before-buy guide (not a chatbot, not a generic rental
+  search), splits the system into Experience / Orchestrator /
+  Knowledge / Tool / Marketplace state / Governance layers, pins
+  block-recipe-only UI orchestration, lists the closed tool set,
+  scopes the LLM to candidate-only, and stages a 5-phase
+  roadmap behind feature flags.
+
+CIE phases align with the milestones in §3–§8 above:
+
+- Phase 1 (deterministic interactive experience) is additive to
+  the existing flow and does not block any §3–§8 task.
+- Phase 4 (real LLM provider) inherits the LLM follow-up gate
+  from §6 and the security gate from
+  [`corent_security_gate_note.md`](corent_security_gate_note.md).
+- Phase 5 (full interactive product) inherits the seller demand
+  board gate from
+  [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md)
+  §12 and the visual change gate from
+  [`agent_loop.md`](agent_loop.md).
