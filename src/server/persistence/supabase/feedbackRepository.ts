@@ -139,6 +139,59 @@ export type RecentFeedbackSubmission = {
   createdAt: string;
 };
 
+// Founder-only status update for the feedback review workflow
+// (cockpit row controls: 검토 완료 / 보관). Auth gate lives one
+// layer up in `src/server/feedback/updateFeedbackStatus.ts` —
+// this module is the DB adapter, never the authority. The
+// service-role client bypasses RLS; the deny-by-default RLS +
+// `revoke all from anon, authenticated` keep the row unwritable
+// from any other path.
+//
+// Safe target statuses: only `reviewed` and `archived`. The
+// `new` enum value is the column default; surfacing a
+// `new`-target update would be a regression case the founder
+// never needs (fresh rows already start there). The validator
+// enforces the closed set.
+export type FeedbackTargetStatus = Exclude<FeedbackStatus, "new">;
+
+export type SetFeedbackStatusResult =
+  | { ok: true; id: string; status: FeedbackTargetStatus }
+  | { ok: false; error: string };
+
+const ALLOWED_TARGET_STATUSES: ReadonlySet<FeedbackTargetStatus> = new Set<
+  FeedbackTargetStatus
+>(["reviewed", "archived"]);
+
+export async function setFeedbackStatus(
+  id: string,
+  target: FeedbackTargetStatus,
+): Promise<SetFeedbackStatusResult> {
+  const idRes = validateOptionalUuid(id);
+  if (!idRes.ok || idRes.value === null) {
+    return { ok: false, error: "feedback id invalid" };
+  }
+  if (!ALLOWED_TARGET_STATUSES.has(target)) {
+    return { ok: false, error: "feedback target status not allowed" };
+  }
+
+  const client = getMarketplaceClient();
+  if (!client) return { ok: false, error: "supabase client unavailable" };
+
+  const { data, error } = await client
+    .from("feedback_submissions")
+    .update({ status: target })
+    .eq("id", idRes.value)
+    .select("id")
+    .maybeSingle();
+  if (error || !data) {
+    return {
+      ok: false,
+      error: error?.message ?? "feedback status update failed",
+    };
+  }
+  return { ok: true, id: idRes.value, status: target };
+}
+
 export async function listRecentFeedbackSubmissions(
   limit = 50,
 ): Promise<RecentFeedbackSubmission[]> {

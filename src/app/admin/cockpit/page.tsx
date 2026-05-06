@@ -48,6 +48,7 @@
 
 import { notFound } from "next/navigation";
 import { Badge } from "@/components/Badge";
+import { FeedbackReviewControls } from "@/components/FeedbackReviewControls";
 import { PublishListingButton } from "@/components/PublishListingButton";
 import { CATEGORY_LABEL } from "@/data/products";
 import { formatKRW } from "@/lib/format";
@@ -324,7 +325,7 @@ function CockpitFeedbackRowItem({ row }: { row: CockpitFeedbackRow }) {
           </span>
         )}
       </div>
-      <span className="text-caption">{row.status}</span>
+      <FeedbackReviewControls feedbackId={row.id} status={row.status} />
     </li>
   );
 }

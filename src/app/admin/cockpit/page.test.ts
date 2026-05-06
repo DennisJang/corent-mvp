@@ -103,6 +103,77 @@ describe("FounderCockpitPage — copy discipline", () => {
   });
 });
 
+describe("FounderCockpitPage — feedback review controls (closed-alpha workflow)", () => {
+  // Plan: docs/corent_wanted_try_request_slice_plan.md §12 PR 3.
+  // The cockpit's feedback row gains row controls that mark a row
+  // reviewed / archived. The wiring is server → server component
+  // → client component (FeedbackReviewControls), and the controls
+  // call a founder-gated server action.
+
+  it("imports FeedbackReviewControls from @/components/FeedbackReviewControls", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/components\/FeedbackReviewControls["']/,
+    );
+    expect(IMPORT_BLOB).toMatch(/FeedbackReviewControls/);
+  });
+
+  it("renders <FeedbackReviewControls /> only inside the feedback row item", () => {
+    const renderHits = SRC.match(/<FeedbackReviewControls\b/g) ?? [];
+    expect(renderHits.length).toBe(1);
+
+    const rowStart = SRC.indexOf("function CockpitFeedbackRowItem");
+    expect(rowStart).toBeGreaterThan(0);
+    const rowEnd = SRC.indexOf("\nfunction ", rowStart + 1);
+    const rowBlock =
+      rowEnd > 0 ? SRC.slice(rowStart, rowEnd) : SRC.slice(rowStart);
+    expect(rowBlock).toMatch(/<FeedbackReviewControls\b/);
+
+    // Defense in depth — must NOT live inside the listing or
+    // request row items.
+    const listingStart = SRC.indexOf("function CockpitListingRowItem");
+    const listingEnd = SRC.indexOf("\nfunction ", listingStart + 1);
+    const listingBlock = SRC.slice(listingStart, listingEnd);
+    expect(listingBlock).not.toMatch(/<FeedbackReviewControls\b/);
+
+    const requestStart = SRC.indexOf("function CockpitRequestRowItem");
+    const requestEnd = SRC.indexOf("\nfunction ", requestStart + 1);
+    const requestBlock = SRC.slice(requestStart, requestEnd);
+    expect(requestBlock).not.toMatch(/<FeedbackReviewControls\b/);
+  });
+
+  it("forwards EXACTLY {feedbackId, status} to the controls — no PII / authority leak", () => {
+    const callMatch = SRC.match(
+      /<FeedbackReviewControls\s+([^/>]*)\/>/,
+    );
+    expect(callMatch).toBeTruthy();
+    const props = callMatch?.[1] ?? "";
+    // Allowed props.
+    expect(props).toMatch(/feedbackId=\{row\.id\}/);
+    expect(props).toMatch(/status=\{row\.status\}/);
+    // Forbidden — contact email, message, profile id, etc. must
+    // never be passed across the component boundary.
+    for (const forbidden of [
+      "row.message",
+      "row.contactEmail",
+      "row.profileId",
+      "row.kind",
+      "row.itemName",
+      "row.category",
+      "row.sourcePage",
+      "row.createdAt",
+    ]) {
+      expect(props).not.toContain(forbidden);
+    }
+  });
+
+  it("does NOT import the feedback review server action directly (boundary preserved)", () => {
+    expect(IMPORT_BLOB).not.toMatch(
+      /from\s+["']@\/server\/feedback\/updateFeedbackStatus["']/,
+    );
+    expect(IMPORT_BLOB).not.toMatch(/updateFeedbackStatusAction/);
+  });
+});
+
 describe("FounderCockpitPage — design discipline", () => {
   it("does not introduce non-token color literals (only #000 / #fff allowed)", () => {
     const offenders: string[] = [];

@@ -7,6 +7,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import {
   insertFeedbackSubmission,
   listRecentFeedbackSubmissions,
+  setFeedbackStatus,
 } from "./feedbackRepository";
 
 vi.mock("./client", async () => {
@@ -25,6 +26,7 @@ function makeFakeClient(
   responders: {
     insert?: () => { data: unknown; error: unknown };
     select?: () => { data: unknown; error: unknown };
+    update?: () => { data: unknown; error: unknown };
   },
   capture: Capture[],
 ) {
@@ -45,6 +47,26 @@ function makeFakeClient(
           },
           then(...args: Parameters<Promise<unknown>["then"]>) {
             return Promise.resolve(r).then(...args);
+          },
+        };
+      },
+      update(payload: unknown) {
+        capture.push({ table, method: "update", args: [payload] });
+        const r = responders.update
+          ? responders.update()
+          : { data: { id: "ok" }, error: null };
+        return {
+          eq(col: string, val: unknown) {
+            capture.push({ table, method: "eq", args: [col, val] });
+            return this;
+          },
+          select(cols?: string) {
+            capture.push({ table, method: "select", args: [cols] });
+            return this;
+          },
+          maybeSingle() {
+            capture.push({ table, method: "maybeSingle", args: [] });
+            return Promise.resolve(r);
           },
         };
       },
@@ -281,5 +303,144 @@ describe("listRecentFeedbackSubmissions — Bundle 2 Slice 4 read helper", () =>
     await listRecentFeedbackSubmissions(0);
     const limitCall = captured.find((c) => c.method === "limit");
     expect(limitCall?.args[0]).toBe(1);
+  });
+});
+
+describe("setFeedbackStatus — input validation", () => {
+  const VALID_ID = "11111111-2222-4333-8444-555555555555";
+
+  it("rejects a non-uuid id without calling the client", async () => {
+    const r = await setFeedbackStatus("not-a-uuid", "reviewed");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/invalid/);
+    expect(getMarketplaceClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects an empty id", async () => {
+    const r = await setFeedbackStatus("", "reviewed");
+    expect(r.ok).toBe(false);
+    expect(getMarketplaceClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects target status 'new' (only reviewed/archived are allowed)", async () => {
+    const r = await setFeedbackStatus(
+      VALID_ID,
+      // @ts-expect-error — runtime guard exists; "new" is excluded
+      "new",
+    );
+    expect(r.ok).toBe(false);
+    expect(getMarketplaceClient).not.toHaveBeenCalled();
+  });
+
+  it("rejects an unknown target status", async () => {
+    const r = await setFeedbackStatus(
+      VALID_ID,
+      // @ts-expect-error — runtime guard
+      "deleted",
+    );
+    expect(r.ok).toBe(false);
+    expect(getMarketplaceClient).not.toHaveBeenCalled();
+  });
+
+  it("returns 'unavailable' error when the client is null", async () => {
+    vi.mocked(getMarketplaceClient).mockReturnValue(null);
+    const r = await setFeedbackStatus(VALID_ID, "reviewed");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(r.error).toMatch(/unavailable/);
+  });
+});
+
+describe("setFeedbackStatus — happy path with mocked client", () => {
+  const VALID_ID = "11111111-2222-4333-8444-555555555555";
+
+  it("issues an update on feedback_submissions filtered by id and only writes the status column", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: { id: VALID_ID }, error: null }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setFeedbackStatus(VALID_ID, "reviewed");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.id).toBe(VALID_ID);
+    expect(r.status).toBe("reviewed");
+
+    const updateCall = captured.find(
+      (c) => c.table === "feedback_submissions" && c.method === "update",
+    );
+    expect(updateCall).toBeTruthy();
+    const payload = updateCall?.args[0] as Record<string, unknown>;
+    // Only `status` is mutated — never message, contact_email,
+    // profile_id, created_at, etc.
+    expect(Object.keys(payload).sort()).toEqual(["status"]);
+    expect(payload.status).toBe("reviewed");
+
+    const eqCall = captured.find(
+      (c) => c.table === "feedback_submissions" && c.method === "eq",
+    );
+    expect(eqCall?.args).toEqual(["id", VALID_ID]);
+  });
+
+  it("supports the 'archived' transition", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: { id: VALID_ID }, error: null }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setFeedbackStatus(VALID_ID, "archived");
+    expect(r.ok).toBe(true);
+    if (!r.ok) return;
+    expect(r.status).toBe("archived");
+    const updateCall = captured.find((c) => c.method === "update");
+    expect((updateCall?.args[0] as Record<string, unknown>).status).toBe(
+      "archived",
+    );
+  });
+
+  it("returns ok:false when the underlying update reports an error (no leak)", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({
+          data: null,
+          error: { message: "duplicate key value" },
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setFeedbackStatus(VALID_ID, "reviewed");
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    // The repo surfaces the error string verbatim from the driver
+    // so the action layer can collapse it into a typed `internal`
+    // envelope. Either way it must not be the SQL or the row body.
+    expect(r.error).not.toContain(VALID_ID);
+    expect(r.error).not.toMatch(/feedback_submissions\./);
+  });
+
+  it("returns ok:false when the row does not exist (no rows returned)", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        update: () => ({ data: null, error: null }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const r = await setFeedbackStatus(VALID_ID, "reviewed");
+    expect(r.ok).toBe(false);
   });
 });
