@@ -146,6 +146,84 @@ describe("SearchResults — match hints (Bundle 4 Slice 1)", () => {
   });
 });
 
+describe("SearchResults — wanted-try-request CTA (cold-start wedge)", () => {
+  // Plan: docs/corent_wanted_try_request_slice_plan.md.
+  // The wanted form must render ONLY in the loaded + empty branch;
+  // it must NOT render on loadState === "error" (transient backend
+  // failure should not capture demand).
+
+  it("imports WantedTryRequestForm only once, from @/components/WantedTryRequestForm", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/components\/WantedTryRequestForm["']/,
+    );
+    const importLines = IMPORT_BLOB.split(/\n/).filter((l) =>
+      l.includes("WantedTryRequestForm"),
+    );
+    expect(importLines.length).toBe(1);
+  });
+
+  it("renders <WantedTryRequestForm /> only inside the EmptyResults function", () => {
+    // `<WantedTryRequestForm` must appear in the source. When it
+    // does, it should live within the EmptyResults function body —
+    // not in LoadingResults / ErrorResults / the result-grid path.
+    const renderHits = SRC.match(/<WantedTryRequestForm\b/g) ?? [];
+    expect(renderHits.length).toBe(1);
+
+    const emptyStart = SRC.indexOf("function EmptyResults");
+    expect(emptyStart).toBeGreaterThan(0);
+    const emptyEnd = SRC.indexOf("\nfunction ", emptyStart + 1);
+    const emptyBlock =
+      emptyEnd > 0 ? SRC.slice(emptyStart, emptyEnd) : SRC.slice(emptyStart);
+    expect(emptyBlock).toMatch(/<WantedTryRequestForm\b/);
+
+    // Belt-and-suspenders: it must NOT appear in LoadingResults or
+    // ErrorResults bodies.
+    const loadingStart = SRC.indexOf("function LoadingResults");
+    const loadingEnd = SRC.indexOf("\nfunction ", loadingStart + 1);
+    const loadingBlock = SRC.slice(loadingStart, loadingEnd);
+    expect(loadingBlock).not.toMatch(/<WantedTryRequestForm\b/);
+
+    const errorStart = SRC.indexOf("function ErrorResults");
+    const errorEnd = SRC.indexOf("\nfunction ", errorStart + 1);
+    const errorBlock = SRC.slice(errorStart, errorEnd);
+    expect(errorBlock).not.toMatch(/<WantedTryRequestForm\b/);
+  });
+
+  it("wires loadState branches so EmptyResults is reached only when loaded + filtered.length === 0", () => {
+    // Pin the existing branch shape: the EmptyResults render is
+    // gated by `loadState === "error"` falling through first, then
+    // `filtered.length === 0`.
+    expect(SRC).toMatch(
+      /loadState\s*===\s*["']error["'][\s\S]*?<ErrorResults[\s\S]*?filtered\.length\s*===\s*0[\s\S]*?<EmptyResults/,
+    );
+  });
+
+  it("passes the parsed intent (rawInput + category) into EmptyResults so the form can pre-fill", () => {
+    expect(SRC).toMatch(
+      /<EmptyResults[\s\S]*?rawInput=\{rawInput\}[\s\S]*?category=\{category\}[\s\S]*?\/>/,
+    );
+  });
+
+  it("EmptyResults forwards rawInput → defaultMessage and category → defaultCategory to the form", () => {
+    const emptyStart = SRC.indexOf("function EmptyResults");
+    const emptyEnd = SRC.indexOf("\nfunction ", emptyStart + 1);
+    const block =
+      emptyEnd > 0 ? SRC.slice(emptyStart, emptyEnd) : SRC.slice(emptyStart);
+    expect(block).toMatch(/defaultMessage=\{rawInput\}/);
+    expect(block).toMatch(/defaultCategory=\{category\s*\?\?\s*null\}/);
+  });
+
+  it("the empty-state copy frames demand-capture, not a generic 'relax filters' suggestion", () => {
+    // JSX wraps long copy across lines; allow whitespace/newlines
+    // between tokens.
+    expect(SRC).toMatch(/조건에\s*맞는\s*매물이\s*아직\s*없어요\./);
+    expect(SRC).toMatch(/같은\s*물건을\s*가진\s*셀러가\s*보면\s*다시\s*안내드려요/);
+    expect(SRC).toMatch(
+      /자동으로\s*매칭되거나\s*결제·픽업·정산이\s*시작되지는?\s*않아요/,
+    );
+  });
+});
+
 describe("SearchResults — design discipline", () => {
   it("does not introduce non-token color literals (only #000 / #fff allowed)", () => {
     const offenders: string[] = [];

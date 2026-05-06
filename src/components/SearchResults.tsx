@@ -7,7 +7,8 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ProductCard } from "@/components/ProductCard";
-import { CATEGORIES, CATEGORY_LABEL } from "@/domain/categories";
+import { WantedTryRequestForm } from "@/components/WantedTryRequestForm";
+import { CATEGORIES, CATEGORY_LABEL, type CategoryId } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
 import type { PublicListing } from "@/domain/listings";
 import type { MatchExplanation } from "@/domain/marketplaceIntelligence";
@@ -277,6 +278,8 @@ export function SearchResults() {
           />
         ) : filtered.length === 0 ? (
           <EmptyResults
+            rawInput={rawInput}
+            category={category}
             onReset={() => {
               router.replace(`/search`);
             }}
@@ -410,21 +413,41 @@ function MatchHints({ explanation }: { explanation: MatchExplanation }) {
   );
 }
 
-function EmptyResults({ onReset }: { onReset: () => void }) {
+function EmptyResults({
+  rawInput,
+  category,
+  onReset,
+}: {
+  rawInput: string;
+  category: CategoryId | undefined;
+  onReset: () => void;
+}) {
+  // Cold-start wedge: turn the dead-end into a demand signal. The
+  // wanted-try-request form is rendered ONLY here (loaded + zero
+  // results) — never on loadState === "error". Plan:
+  // docs/corent_wanted_try_request_slice_plan.md.
   return (
-    <div className="border border-dashed border-[color:var(--line-dashed)] p-12 flex flex-col gap-4 items-start">
-      <span className="text-caption text-[color:var(--ink-60)]">No matches</span>
-      <h3 className="text-h3">조건에 맞는 물건이 아직 없어요.</h3>
-      <p className="text-body text-[color:var(--ink-60)] max-w-[480px]">
-        조건을 줄이면 더 많은 결과가 나와요. 카테고리나 가격 조건을 풀어보세요.
-      </p>
-      <button
-        type="button"
-        onClick={onReset}
-        className="h-[48px] px-6 rounded-full bg-black text-white text-[16px] font-medium border border-black focus-ring"
-      >
-        조건 초기화
-      </button>
+    <div className="flex flex-col gap-8">
+      <div className="border border-dashed border-[color:var(--line-dashed)] p-12 flex flex-col gap-4 items-start">
+        <span className="text-caption text-[color:var(--ink-60)]">No matches</span>
+        <h3 className="text-h3">조건에 맞는 매물이 아직 없어요.</h3>
+        <p className="text-body text-[color:var(--ink-60)] max-w-[520px]">
+          사기 전에 며칠 써보고 싶다는 생각은 그대로 유효해요. 같은 물건을
+          가진 셀러가 보면 다시 안내드려요. 자동으로 매칭되거나
+          결제·픽업·정산이 시작되지는 않아요.
+        </p>
+        <button
+          type="button"
+          onClick={onReset}
+          className="h-[48px] px-6 rounded-full bg-white text-black text-[16px] font-medium border border-[color:var(--ink-20)] hover:border-black focus-ring"
+        >
+          조건 초기화
+        </button>
+      </div>
+      <WantedTryRequestForm
+        defaultMessage={rawInput}
+        defaultCategory={category ?? null}
+      />
     </div>
   );
 }
