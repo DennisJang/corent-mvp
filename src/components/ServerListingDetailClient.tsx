@@ -53,6 +53,10 @@ import type { PublicListing } from "@/domain/listings";
 import { formatKRW } from "@/lib/format";
 import { calculateRentalAmounts } from "@/lib/pricing";
 import { submitRentalRequest } from "@/lib/client/rentalRequestClient";
+import {
+  deriveTryBeforeBuyReadiness,
+  type TryBeforeBuyReadinessCard,
+} from "@/lib/services/tryBeforeBuyReadinessService";
 
 type Props = {
   listing: PublicListing;
@@ -106,6 +110,29 @@ export function ServerListingDetailClient({ listing }: Props) {
   const previewAmounts = useMemo(
     () => calculateRentalAmounts(previewRentalFee, listing.estimatedValue),
     [previewRentalFee, listing.estimatedValue],
+  );
+
+  // Bundle 4 Slice 6 — deterministic try-before-buy readiness card.
+  // Derived from the SAFE PublicListing fields only (category /
+  // pickupArea / condition / estimatedValue). The card is
+  // non-authoritative: it never claims rental confirmation,
+  // payment, deposit, refund, or trust-score authority. The
+  // banlist is enforced both by the service and by the static-
+  // text test on this component.
+  const readiness = useMemo<TryBeforeBuyReadinessCard>(
+    () =>
+      deriveTryBeforeBuyReadiness({
+        category: listing.category,
+        pickupArea: listing.pickupArea,
+        condition: listing.condition,
+        estimatedValue: listing.estimatedValue,
+      }),
+    [
+      listing.category,
+      listing.pickupArea,
+      listing.condition,
+      listing.estimatedValue,
+    ],
   );
 
   const handleSubmit = async () => {
@@ -226,6 +253,10 @@ export function ServerListingDetailClient({ listing }: Props) {
           </aside>
         </div>
       </section>
+
+      <section className="container-main pb-16">
+        <ReadinessCard readiness={readiness} />
+      </section>
     </article>
   );
 }
@@ -276,5 +307,79 @@ function BlockedPanel({
         </Link>
       ) : null}
     </div>
+  );
+}
+
+// Bundle 4 Slice 6 — non-authoritative try-before-buy readiness
+// card. Reads only the deterministic `TryBeforeBuyReadinessCard`
+// derived from the safe PublicListing fields (no raw seller
+// input, no exact address, no admin notes). The card frames
+// CoRent's wedge: what the renter can VALIDATE during the trial,
+// what to DOUBLE-CHECK before requesting, and the calm
+// responsibility framing the renter should know about before
+// submitting. BW Swiss Grid tokens only — dashed pills for the
+// non-authoritative hint surface.
+function ReadinessCard({
+  readiness,
+}: {
+  readiness: TryBeforeBuyReadinessCard;
+}) {
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="border-b border-black px-6 py-4">
+        <h2 className="text-title">구매 전 확인할 수 있는 것</h2>
+        <p className="text-caption text-[color:var(--ink-60)] pt-1">
+          자동으로 정리한 안내예요. 셀러 응답 전에 다시 확인해 주세요.
+        </p>
+      </header>
+
+      <div className="px-6 py-6 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        <div className="flex flex-col gap-3">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            구매 전 확인할 수 있는 것
+          </span>
+          <ul className="flex flex-col gap-2 text-body">
+            {readiness.tryBeforeBuyPoints.map((point) => (
+              <li key={`try-${point}`} className="flex gap-2">
+                <span aria-hidden="true">·</span>
+                <span>{point}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            요청 전 확인할 점
+          </span>
+          <ul className="flex flex-col gap-2 text-body">
+            {readiness.checkBeforeRequest.map((check) => (
+              <li key={`check-${check}`} className="flex gap-2">
+                <span aria-hidden="true">·</span>
+                <span>{check}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="px-6 pb-6 flex flex-col gap-3 border-t border-[color:var(--ink-12)] pt-6">
+        <div className="flex items-baseline justify-between gap-4">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            책임 기준
+          </span>
+          <span className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-80)]">
+            {readiness.responsibilityBasisLabel}
+          </span>
+        </div>
+        <p className="text-small text-[color:var(--ink-60)]">
+          {readiness.responsibilityCaption}
+        </p>
+      </div>
+
+      <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
+        {readiness.nonPaymentCaption}
+      </p>
+    </section>
   );
 }

@@ -171,6 +171,126 @@ describe("ServerListingDetailClient — blocked-state copy", () => {
   });
 });
 
+describe("ServerListingDetailClient — try-before-buy readiness card (Bundle 4 Slice 6)", () => {
+  it("imports the deterministic readiness helpers from the safe service hop", () => {
+    // SRC-wide scan because the import statement spans multiple
+    // lines (and the `IMPORT_LINES` filter only catches lines
+    // that start with `import`).
+    expect(SRC).toMatch(
+      /import\s+\{[\s\S]*?deriveTryBeforeBuyReadiness[\s\S]*?TryBeforeBuyReadinessCard[\s\S]*?\}\s*from\s+["']@\/lib\/services\/tryBeforeBuyReadinessService["']/,
+    );
+  });
+
+  it("memoizes the readiness derivation off the SAFE PublicListing fields only (category / pickupArea / condition / estimatedValue)", () => {
+    expect(SRC).toMatch(
+      /useMemo<TryBeforeBuyReadinessCard>\([\s\S]*?deriveTryBeforeBuyReadiness\(\{[\s\S]*?category:\s*listing\.category[\s\S]*?pickupArea:\s*listing\.pickupArea[\s\S]*?condition:\s*listing\.condition[\s\S]*?estimatedValue:\s*listing\.estimatedValue[\s\S]*?\}\)[\s\S]*?\[/,
+    );
+    // The memo must NOT reach for a private field that the
+    // PublicListing DTO doesn't even expose; this test will
+    // fail loudly if a future widening lets the component reach
+    // for raw seller input / private serial / verification etc.
+    const memoBlock = SRC.slice(
+      SRC.indexOf("useMemo<TryBeforeBuyReadinessCard>"),
+      SRC.indexOf("function ReadinessCard"),
+    );
+    for (const banned of [
+      "rawSellerInput",
+      "privateSerialNumber",
+      "humanReviewNotes",
+      "verification",
+      "payment",
+      "settlement",
+      "sellerPayout",
+      "platformFee",
+    ]) {
+      expect(memoBlock).not.toContain(banned);
+    }
+  });
+
+  it("renders the documented Korean headings", () => {
+    // Primary heading + secondary section headings.
+    expect(SRC).toContain("구매 전 확인할 수 있는 것");
+    expect(SRC).toContain("요청 전 확인할 점");
+    expect(SRC).toContain("책임 기준");
+  });
+
+  it("renders the always-on responsibility + non-payment captions through the readiness fields (no inline duplicate copy)", () => {
+    expect(SRC).toMatch(
+      /\{readiness\.responsibilityCaption\}/,
+    );
+    expect(SRC).toMatch(/\{readiness\.nonPaymentCaption\}/);
+    expect(SRC).toMatch(/\{readiness\.responsibilityBasisLabel\}/);
+  });
+
+  it("does NOT use regulated language anywhere inside the ReadinessCard function body", () => {
+    const start = SRC.indexOf("function ReadinessCard");
+    expect(start).toBeGreaterThan(0);
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(
+      start,
+      after === -1 ? undefined : after,
+    );
+    for (const banned of [
+      "보증",
+      "보험",
+      "보장",
+      "결제 완료",
+      "대여 확정",
+      "환불",
+      "정산 완료",
+    ]) {
+      expect(block).not.toContain(banned);
+    }
+  });
+
+  it("uses dashed-border tokens for the responsibility-basis pill (no filled-black authority styling)", () => {
+    const start = SRC.indexOf("function ReadinessCard");
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(
+      start,
+      after === -1 ? undefined : after,
+    );
+    expect(block).toMatch(/border-dashed/);
+    expect(block).not.toMatch(/bg-black\s+text-white/);
+  });
+
+  it("does not surface any private / authority field name inside the card body", () => {
+    const start = SRC.indexOf("function ReadinessCard");
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(
+      start,
+      after === -1 ? undefined : after,
+    );
+    for (const banned of [
+      "rawSellerInput",
+      "privateSerialNumber",
+      "humanReviewNotes",
+      "verification",
+      "trustScore",
+      "payment",
+      "settlement",
+      "sellerPayout",
+      "platformFee",
+      "borrowerId",
+      "adminNotes",
+      "address",
+      "contact",
+    ]) {
+      expect(block).not.toMatch(new RegExp(`\\b${banned}\\b`));
+    }
+  });
+
+  it("renders the card section under the main grid (does not break the existing request panel layout)", () => {
+    // The new <section className="container-main pb-16"> with
+    // <ReadinessCard ... /> must appear AFTER the closing of the
+    // main grid section that owns the request button. We pin
+    // the JSX position via a regex.
+    expect(SRC).toMatch(
+      /<\/section>\s*\n\s*<section className="container-main pb-16">\s*\n\s*<ReadinessCard\b/,
+    );
+  });
+});
+
 describe("ServerListingDetailClient — design discipline", () => {
   it("does not introduce a non-token color (no hex / rgb / named-color literals beyond #000 / #fff / inherit / currentColor / transparent)", () => {
     // Every color must come from --ink-* or the BW palette tokens.
