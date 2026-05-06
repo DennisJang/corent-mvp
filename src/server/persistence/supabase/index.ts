@@ -20,6 +20,7 @@ export {
   getRentalIntentById,
   listRentalIntents,
   listRentalIntentsBySeller,
+  listRentalIntentsByBorrower,
   saveRentalIntent,
   appendRentalEvent,
   listRentalEvents,

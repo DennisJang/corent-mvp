@@ -176,6 +176,43 @@ export async function listRentalIntentsBySeller(
   return data.map((r) => rowToIntent(r as unknown as RentalIntentRow));
 }
 
+// Bundle 3 Slice 2 — server-only borrower scoping read.
+//
+// Mirror of `listRentalIntentsBySeller`, scoped to a single borrower
+// for the `/requests` page. Same defense posture:
+//
+//   - validates the borrower id as a uuid; returns `[]` on a
+//     malformed value or when the marketplace client is unavailable.
+//   - filters by `borrower_id` server-side via the Postgres `eq`
+//     predicate — a foreign borrower's row cannot leak even if the
+//     action layer is bypassed.
+//   - does NOT join `listing_secrets`, payment session ids,
+//     settlement timestamps, or any private slot beyond what
+//     `rowToIntent` already maps.
+//   - bounded by `limit` (clamped to `[1, 200]`).
+//
+// The repo does NOT filter by status. The `/requests` page surfaces
+// every state of the borrower's own requests; the action layer
+// projects only the safe fields.
+export async function listRentalIntentsByBorrower(
+  borrowerId: string,
+  limit = 100,
+): Promise<RentalIntent[]> {
+  const idRes = validateUuid(borrowerId);
+  if (!idRes.ok) return [];
+  const client = getMarketplaceClient();
+  if (!client) return [];
+  const safe = Math.max(1, Math.min(200, Math.floor(limit)));
+  const { data, error } = await client
+    .from("rental_intents")
+    .select("*")
+    .eq("borrower_id", idRes.value)
+    .order("updated_at", { ascending: false })
+    .limit(safe);
+  if (error || !data) return [];
+  return data.map((r) => rowToIntent(r as unknown as RentalIntentRow));
+}
+
 export type SaveRentalResult =
   | { ok: true; id: string }
   | { ok: false; error: string };

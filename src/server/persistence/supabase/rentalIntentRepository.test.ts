@@ -7,6 +7,7 @@ import {
   appendRentalEvent,
   countRentalIntentsByStatus,
   listRentalIntents,
+  listRentalIntentsByBorrower,
   listRentalIntentsBySeller,
   saveRentalIntent,
 } from "./rentalIntentRepository";
@@ -84,6 +85,13 @@ describe("rental intent repository — fail closed when client unavailable", () 
     expect(
       await listRentalIntentsBySeller(
         "44444444-2222-4333-8444-555555555555",
+      ),
+    ).toEqual([]);
+  });
+  it("listRentalIntentsByBorrower returns []", async () => {
+    expect(
+      await listRentalIntentsByBorrower(
+        "33333333-2222-4333-8444-555555555555",
       ),
     ).toEqual([]);
   });
@@ -360,5 +368,112 @@ describe("listRentalIntentsBySeller — happy path with mocked client", () => {
     vi.mocked(getMarketplaceClient).mockReturnValue(fake);
 
     expect(await listRentalIntentsBySeller(SELLER)).toEqual([]);
+  });
+});
+
+// Bundle 3 Slice 2 — listRentalIntentsByBorrower scoping checks.
+const BORROWER = "33333333-2222-4333-8444-555555555555";
+const OTHER_BORROWER = "44444444-2222-4333-8444-555555555556";
+
+describe("listRentalIntentsByBorrower — input validation", () => {
+  it("returns [] for malformed borrower id without touching the client", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listRentalIntentsByBorrower("not-a-uuid")).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+
+  it("returns [] for empty / non-string borrower id", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient({}, captured) as unknown as ReturnType<
+      typeof getMarketplaceClient
+    >;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+    expect(await listRentalIntentsByBorrower("")).toEqual([]);
+    expect(
+      await listRentalIntentsByBorrower(undefined as unknown as string),
+    ).toEqual([]);
+    expect(captured).toEqual([]);
+  });
+});
+
+describe("listRentalIntentsByBorrower — happy path with mocked client", () => {
+  it("filters by borrower_id and orders by updated_at desc; never filters by status", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [
+            rentalRowFixture({
+              id: "66666666-2222-4333-8444-cccccccccccc",
+              borrower_id: BORROWER,
+              status: "requested",
+            }),
+            rentalRowFixture({
+              id: "66666666-2222-4333-8444-dddddddddddd",
+              borrower_id: BORROWER,
+              status: "seller_approved",
+            }),
+          ],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listRentalIntentsByBorrower(BORROWER);
+    expect(rows).toHaveLength(2);
+    expect(rows.every((r) => r.borrowerId === BORROWER)).toBe(true);
+
+    const eqCalls = captured.filter((c) => c.method === "eq");
+    expect(
+      eqCalls.some(
+        (c) => c.args[0] === "borrower_id" && c.args[1] === BORROWER,
+      ),
+    ).toBe(true);
+    // Status filter must NOT be applied at the repo layer — the
+    // /requests page surfaces every state.
+    expect(eqCalls.some((c) => c.args[0] === "status")).toBe(false);
+    // Borrower-scoped read must NOT also constrain by seller_id.
+    expect(eqCalls.some((c) => c.args[0] === "seller_id")).toBe(false);
+
+    const orderCalls = captured.filter((c) => c.method === "order");
+    expect(orderCalls.some((c) => c.args[0] === "updated_at")).toBe(true);
+  });
+
+  it("returns [] when the underlying read errors", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({ data: null, error: { message: "boom" } }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    expect(await listRentalIntentsByBorrower(BORROWER)).toEqual([]);
+  });
+
+  it("does not echo cross-borrower rows when responder hands them back", async () => {
+    const captured: Capture[] = [];
+    const fake = makeFakeClient(
+      {
+        select: () => ({
+          data: [rentalRowFixture({ borrower_id: BORROWER })],
+          error: null,
+        }),
+      },
+      captured,
+    ) as unknown as ReturnType<typeof getMarketplaceClient>;
+    vi.mocked(getMarketplaceClient).mockReturnValue(fake);
+
+    const rows = await listRentalIntentsByBorrower(BORROWER);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.borrowerId).toBe(BORROWER);
+    expect(rows[0]?.borrowerId).not.toBe(OTHER_BORROWER);
   });
 });

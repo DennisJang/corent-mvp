@@ -267,6 +267,15 @@ function SignedInPanel({
               — 내 리스팅 / 받은 요청
             </span>
           </li>
+          {hasBorrower ? (
+            <li>
+              <Link href="/requests" className="underline">/requests</Link>
+              {" "}
+              <span className="text-small text-[color:var(--ink-60)]">
+                — 내가 보낸 대여 요청
+              </span>
+            </li>
+          ) : null}
           <li>
             <Link href="/search" className="underline">/search</Link>
             {" "}
