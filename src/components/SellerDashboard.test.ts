@@ -254,6 +254,137 @@ describe("SellerDashboard — handleServerRespond (parent handler)", () => {
   });
 });
 
+describe("SellerDashboard — seller listing readiness panel (Bundle 4 Slice 7)", () => {
+  it("imports the deterministic readiness helpers from the safe service hop", () => {
+    expect(SRC).toMatch(
+      /import\s+\{[\s\S]*?deriveSellerListingReadiness[\s\S]*?SellerListingReadinessCard[\s\S]*?\}\s*from\s+["']@\/lib\/services\/sellerListingReadinessService["']/,
+    );
+  });
+
+  it("computes the readiness only when chatIntakeMode === 'server' AND the listings envelope is server-backed", () => {
+    expect(SRC).toMatch(
+      /sellerListingReadiness[\s\S]*?chatIntakeMode\s*!==\s*["']server["'][\s\S]*?return\s+null/,
+    );
+    expect(SRC).toMatch(
+      /sellerListingReadiness[\s\S]*?serverListingsState[\s\S]*?kind\s*!==\s*["']server["'][\s\S]*?return\s+null/,
+    );
+  });
+
+  it("only forwards the safe { category, status } subset to the deterministic generator", () => {
+    const start = SRC.indexOf("const sellerListingReadiness = useMemo");
+    expect(start).toBeGreaterThan(0);
+    const end = SRC.indexOf("\n  const sellerStorePreview", start);
+    expect(end).toBeGreaterThan(start);
+    const block = SRC.slice(start, end);
+    expect(block).toMatch(
+      /listings:[\s\S]*?\.map\(\(l\)\s*=>\s*\(\{\s*category:\s*l\.category[\s\S]*?status:\s*l\.status[\s\S]*?\}\)\)/,
+    );
+    // No private / authority / borrower-side field forwarded.
+    for (const banned of [
+      "borrowerDisplayName",
+      "borrowerId",
+      "sellerPayout",
+      "borrowerTotal",
+      "safetyDeposit",
+      "rentalFee",
+      "itemName",
+      "prices",
+      "rawSellerInput",
+      "privateSerialNumber",
+      "humanReviewNotes",
+      "verification",
+      "payment",
+      "settlement",
+    ]) {
+      expect(block).not.toContain(banned);
+    }
+  });
+
+  it("renders the documented Korean headings and sub-captions", () => {
+    expect(SRC).toContain("공개·요청 전 더 신뢰를 주려면");
+    expect(SRC).toContain(
+      "자동으로 정리한 안내예요. 구성품·상태·수령 권역을 먼저 확인해 주세요.",
+    );
+    expect(SRC).toContain("지금 상태");
+    expect(SRC).toContain("추천 점검 항목");
+    expect(SRC).toContain("책임 기준 안내");
+  });
+
+  it("forwards the readiness fields directly into the panel (no inline duplicate copy)", () => {
+    // The panel destructures `readiness` into local consts, then
+    // renders the values. We assert the destructure targets the
+    // four documented fields and the JSX renders them directly.
+    const start = SRC.indexOf("function SellerListingReadinessPanel");
+    expect(start).toBeGreaterThan(0);
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    expect(block).toMatch(
+      /const\s*\{\s*readyChecks\s*,\s*missingOrRecommendedChecks\s*,\s*responsibilityBasisLabel\s*,\s*publicationReadinessCaption\s*,?\s*\}\s*=\s*readiness\s*;/,
+    );
+    expect(block).toContain("{responsibilityBasisLabel}");
+    expect(block).toContain("{publicationReadinessCaption}");
+    expect(block).toMatch(/readyChecks\.map/);
+    expect(block).toMatch(/missingOrRecommendedChecks\.map/);
+  });
+
+  it("renders the panel only when sellerListingReadiness is non-null (no local-mode rendering)", () => {
+    expect(SRC).toMatch(
+      /\{\s*sellerListingReadiness\s*\?\s*\([\s\S]*?<SellerListingReadinessPanel[\s\S]*?:\s*null\s*\}/,
+    );
+  });
+
+  it("does NOT use regulated language anywhere inside the SellerListingReadinessPanel function body", () => {
+    const start = SRC.indexOf("function SellerListingReadinessPanel");
+    expect(start).toBeGreaterThan(0);
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    for (const banned of [
+      "보증",
+      "보험",
+      "보장",
+      "결제 완료",
+      "대여 확정",
+      "환불",
+      "정산 완료",
+    ]) {
+      expect(block).not.toContain(banned);
+    }
+  });
+
+  it("uses dashed-border tokens for the responsibility-basis pill (no filled-black authority styling)", () => {
+    const start = SRC.indexOf("function SellerListingReadinessPanel");
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    expect(block).toMatch(/border-dashed/);
+    expect(block).not.toMatch(/bg-black\s+text-white/);
+  });
+
+  it("does not surface any private / authority field name inside the panel body", () => {
+    const start = SRC.indexOf("function SellerListingReadinessPanel");
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    const block = SRC.slice(start, after === -1 ? undefined : after);
+    for (const banned of [
+      "rawSellerInput",
+      "privateSerialNumber",
+      "humanReviewNotes",
+      "verification",
+      "trustScore",
+      "payment",
+      "settlement",
+      "sellerPayout",
+      "platformFee",
+      "borrowerId",
+      "borrowerTotal",
+      "safetyDeposit",
+      "adminNotes",
+      "address",
+      "contact",
+    ]) {
+      expect(block).not.toMatch(new RegExp(`\\b${banned}\\b`));
+    }
+  });
+});
+
 describe("SellerDashboard — seller store preview panel (Bundle 4 Slice 2)", () => {
   it("imports the deterministic seller-store preview helpers from the marketplace intelligence service", () => {
     expect(IMPORT_BLOB).toMatch(

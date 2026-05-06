@@ -71,6 +71,10 @@ import {
   storeTypeLabel,
   type SellerStorePreview,
 } from "@/lib/services/marketplaceIntelligenceService";
+import {
+  deriveSellerListingReadiness,
+  type SellerListingReadinessCard,
+} from "@/lib/services/sellerListingReadinessService";
 import { CATEGORY_LABEL } from "@/domain/categories";
 import { formatKRW } from "@/lib/format";
 
@@ -339,6 +343,28 @@ export function SellerDashboard() {
     }
     return rows;
   }, [myRentals, handoffByKey]);
+
+  // Bundle 4 Slice 7 — deterministic seller-side listing readiness
+  // checklist. Server mode only: derived from the same already-
+  // server-scoped `serverListingsState` envelope the listings
+  // table reads. Returns `null` outside server mode or when the
+  // envelope is not `kind: "server"` so the existing local-mode
+  // demo never picks up the panel.
+  const sellerListingReadiness = useMemo<SellerListingReadinessCard | null>(
+    () => {
+      if (chatIntakeMode !== "server") return null;
+      if (!serverListingsState || serverListingsState.kind !== "server") {
+        return null;
+      }
+      return deriveSellerListingReadiness({
+        listings: serverListingsState.listings.map((l) => ({
+          category: l.category,
+          status: l.status,
+        })),
+      });
+    },
+    [chatIntakeMode, serverListingsState],
+  );
 
   // Bundle 4 Slice 2 — deterministic seller-store preview. Server
   // mode only: the preview is computed from the already server-
@@ -836,6 +862,7 @@ export function SellerDashboard() {
             chatIntakeMode={chatIntakeMode}
             localListings={listings}
             serverListingsState={serverListingsState}
+            sellerListingReadiness={sellerListingReadiness}
           />
         </div>
       </section>
@@ -1298,10 +1325,12 @@ function ListingsTableBlock({
   chatIntakeMode,
   localListings,
   serverListingsState,
+  sellerListingReadiness,
 }: {
   chatIntakeMode: "local" | "server";
   localListings: ListingIntent[];
   serverListingsState: SellerOwnedListingsLoadResult | null;
+  sellerListingReadiness: SellerListingReadinessCard | null;
 }) {
   // PR 5G — server mode is the authoritative read path when active.
   // The component never mixes local rows and server rows; it never
@@ -1423,6 +1452,11 @@ function ListingsTableBlock({
           </p>
         ) : null}
       </div>
+      {sellerListingReadiness ? (
+        <div className="mt-8">
+          <SellerListingReadinessPanel readiness={sellerListingReadiness} />
+        </div>
+      ) : null}
       <div className="border-t border-black pt-6 mt-6 flex justify-end">
         <Button href="/sell" variant="secondary" size="md">
           새 물건 등록
@@ -1700,6 +1734,82 @@ function SellerStorePreviewPanel({
       <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
         이 초안은 셀러 본인에게만 보여요. 공개 스토어 페이지는 준비가 되면
         별도로 안내될 예정이에요.
+      </p>
+    </section>
+  );
+}
+
+// Bundle 4 Slice 7 — non-authoritative seller-side listing readiness
+// panel. Reads only the deterministic `SellerListingReadinessCard`
+// derived from the seller's already-server-scoped
+// `SellerDashboardListing[]` (category + status only). The panel is
+// advisory: it never claims a listing is verified, guaranteed, or
+// approved beyond what its row status already says. BW Swiss Grid
+// tokens only; the dashed-border pill carries the responsibility-
+// basis label.
+function SellerListingReadinessPanel({
+  readiness,
+}: {
+  readiness: SellerListingReadinessCard;
+}) {
+  const {
+    readyChecks,
+    missingOrRecommendedChecks,
+    responsibilityBasisLabel,
+    publicationReadinessCaption,
+  } = readiness;
+  return (
+    <section className="bg-white border border-[color:var(--ink-12)]">
+      <header className="border-b border-black px-6 py-4">
+        <h3 className="text-title">공개·요청 전 더 신뢰를 주려면</h3>
+        <p className="text-caption text-[color:var(--ink-60)] pt-1">
+          자동으로 정리한 안내예요. 구성품·상태·수령 권역을 먼저 확인해 주세요.
+        </p>
+      </header>
+
+      <div className="px-6 py-5 grid grid-cols-1 md:grid-cols-2 gap-x-8 gap-y-6">
+        <div className="flex flex-col gap-3">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            지금 상태
+          </span>
+          <ul className="flex flex-col gap-2 text-body">
+            {readyChecks.map((c) => (
+              <li key={`ready-${c}`} className="flex gap-2">
+                <span aria-hidden="true">·</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+
+        <div className="flex flex-col gap-3">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            추천 점검 항목
+          </span>
+          <ul className="flex flex-col gap-2 text-body">
+            {missingOrRecommendedChecks.map((c) => (
+              <li key={`rec-${c}`} className="flex gap-2">
+                <span aria-hidden="true">·</span>
+                <span>{c}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+      </div>
+
+      <div className="px-6 pb-5 flex flex-col gap-3 border-t border-[color:var(--ink-12)] pt-5">
+        <div className="flex items-baseline justify-between gap-4 flex-wrap">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            책임 기준 안내
+          </span>
+          <span className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-80)]">
+            {responsibilityBasisLabel}
+          </span>
+        </div>
+      </div>
+
+      <p className="text-caption text-[color:var(--ink-60)] px-6 py-4 border-t border-[color:var(--ink-12)]">
+        {publicationReadinessCaption}
       </p>
     </section>
   );
