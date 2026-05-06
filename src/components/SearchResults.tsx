@@ -10,9 +10,11 @@ import { ProductCard } from "@/components/ProductCard";
 import { CATEGORIES, CATEGORY_LABEL } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
 import type { PublicListing } from "@/domain/listings";
+import type { MatchExplanation } from "@/domain/marketplaceIntelligence";
 import { loadPublicListings } from "@/lib/client/publicListingsClient";
 import { publicListingService } from "@/lib/services/publicListingService";
 import { searchService } from "@/lib/services/searchService";
+import { explainMatch } from "@/lib/services/marketplaceIntelligenceService";
 import { formatKRW } from "@/lib/format";
 
 const DURATION_FILTER: { key: DurationKey; days: 1 | 3 | 7; capLabel: string }[] = [
@@ -95,6 +97,21 @@ export function SearchResults() {
       return true;
     });
   }, [listings, category, intent, durationKey]);
+
+  // Bundle 4 Slice 1 — deterministic match explanations.
+  //
+  // We compute one MatchExplanation per visible card from the
+  // parsed search intent. The output is deterministic; it never
+  // claims authority. We only render hints when there is a parsed
+  // intent (otherwise the renter has not given us enough signal).
+  const explanations = useMemo<Record<string, MatchExplanation>>(() => {
+    if (!intent) return {};
+    const out: Record<string, MatchExplanation> = {};
+    for (const l of filtered) {
+      out[l.publicListingId] = explainMatch(intent, l);
+    }
+    return out;
+  }, [intent, filtered]);
 
   const setParam = (k: string, v: string | null) => {
     const next = new URLSearchParams(params.toString());
@@ -266,14 +283,20 @@ export function SearchResults() {
           />
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-0 border-l border-[color:var(--ink-12)]">
-            {filtered.map((listing) => (
-              <div
-                key={listing.publicListingId}
-                className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px"
-              >
-                <ProductCard listing={listing} />
-              </div>
-            ))}
+            {filtered.map((listing) => {
+              const explanation = explanations[listing.publicListingId];
+              return (
+                <div
+                  key={listing.publicListingId}
+                  className="border-r border-b border-t border-[color:var(--ink-12)] -ml-px -mt-px flex flex-col"
+                >
+                  <ProductCard listing={listing} />
+                  {explanation ? (
+                    <MatchHints explanation={explanation} />
+                  ) : null}
+                </div>
+              );
+            })}
           </div>
         )}
       </section>
@@ -335,6 +358,55 @@ function CategoryChip({
     >
       {label}
     </button>
+  );
+}
+
+// Bundle 4 Slice 1 — non-authoritative match hints rendered below
+// each search-result card. Uses BW Swiss Grid tokens only (no new
+// colors); reasons go in a dashed-bordered "추천 이유" block and
+// cautions in an "확인할 점" block. Copy is calm and avoids any
+// regulated-language phrase by construction (the deterministic
+// generator's vocabulary is closed; this surface only echoes it).
+function MatchHints({ explanation }: { explanation: MatchExplanation }) {
+  const { reasons, cautions } = explanation;
+  if (reasons.length === 0 && cautions.length === 0) return null;
+  return (
+    <div className="border-t border-[color:var(--ink-12)] px-6 py-4 flex flex-col gap-3 bg-white">
+      {reasons.length > 0 ? (
+        <div className="flex flex-col gap-2">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            추천 이유
+          </span>
+          <ul className="flex flex-wrap gap-2">
+            {reasons.map((r) => (
+              <li
+                key={`reason-${r.label}`}
+                className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-80)]"
+              >
+                {r.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+      {cautions.length > 0 ? (
+        <div className="flex flex-col gap-2 border-t border-[color:var(--ink-12)] pt-3">
+          <span className="text-caption text-[color:var(--ink-60)]">
+            확인할 점
+          </span>
+          <ul className="flex flex-wrap gap-2">
+            {cautions.map((c) => (
+              <li
+                key={`caution-${c.label}`}
+                className="inline-flex items-center min-h-7 px-3 rounded-full text-[11px] font-medium tracking-[0.04em] uppercase border border-dashed border-[color:var(--line-dashed)] text-[color:var(--ink-60)]"
+              >
+                {c.label}
+              </li>
+            ))}
+          </ul>
+        </div>
+      ) : null}
+    </div>
   );
 }
 

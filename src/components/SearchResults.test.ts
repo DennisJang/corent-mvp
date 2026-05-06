@@ -76,6 +76,76 @@ describe("SearchResults — local mode behavior preserved", () => {
   });
 });
 
+describe("SearchResults — match hints (Bundle 4 Slice 1)", () => {
+  it("imports the deterministic explainMatch generator", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/lib\/services\/marketplaceIntelligenceService["']/,
+    );
+    expect(IMPORT_BLOB).toMatch(/explainMatch/);
+  });
+
+  it("imports the MatchExplanation type from the marketplace intelligence domain module", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/domain\/marketplaceIntelligence["']/,
+    );
+    expect(IMPORT_BLOB).toMatch(/MatchExplanation/);
+  });
+
+  it("renders the '추천 이유' caption only inside the new MatchHints block", () => {
+    expect(SRC).toContain("추천 이유");
+  });
+
+  it("renders the '확인할 점' caption only inside the new MatchHints block", () => {
+    expect(SRC).toContain("확인할 점");
+  });
+
+  it("computes the explanations map from the parsed search intent (memoized) — no precomputed fixture", () => {
+    expect(SRC).toMatch(
+      /explanations[\s\S]*?Record<string,\s*MatchExplanation>[\s\S]*?explainMatch\(\s*intent\s*,\s*l\s*\)/,
+    );
+  });
+
+  it("does not render hints when there is no parsed search intent (intent === null short-circuits)", () => {
+    expect(SRC).toMatch(/if\s*\(\s*!intent\s*\)\s*return\s*\{\s*\}\s*;/);
+  });
+
+  it("does not introduce regulated-language phrases anywhere in the source", () => {
+    for (const banned of [
+      "결제 완료",
+      "결제 처리",
+      "대여 확정",
+      "대여 완료",
+      "보증금 청구",
+      "보험",
+      "보장",
+      "환불",
+      "정산 완료",
+      "guaranteed",
+      "verified_seller",
+    ]) {
+      expect(SRC).not.toContain(banned);
+    }
+  });
+
+  it("does not render hints with strong-authority styling (uses dashed border tokens, not filled black pills)", () => {
+    // The MatchHints block must use the dashed-line token, not
+    // `bg-black text-white` filled pills (which would imply
+    // confirmed authority). We slice strictly to the MatchHints
+    // function body so the regex does not run into sibling
+    // functions (`CategoryChip`, `EmptyResults`) that legitimately
+    // use the filled-black pill style for selected filters.
+    const start = SRC.indexOf("function MatchHints");
+    expect(start).toBeGreaterThan(0);
+    // The next top-level `\nfunction ` declaration after MatchHints
+    // is the end of the slice we want to inspect.
+    const after = SRC.indexOf("\nfunction ", start + 1);
+    expect(after).toBeGreaterThan(start);
+    const block = SRC.slice(start, after);
+    expect(block).toMatch(/border-dashed/);
+    expect(block).not.toMatch(/bg-black\s+text-white/);
+  });
+});
+
 describe("SearchResults — design discipline", () => {
   it("does not introduce non-token color literals (only #000 / #fff allowed)", () => {
     const offenders: string[] = [];
