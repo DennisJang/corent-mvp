@@ -2,6 +2,27 @@
 
 _Recorded: 2026-04-30_
 
+> **Status:** Historical / Closed-alpha Operations Posture
+> **Scope:** former pre-revenue posture (no fee, no payment, no
+> deposit, no settlement, no payout) for the CoRent rental-
+> marketplace vertical, plus a feature-flag table for runtime
+> modes.
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)
+> as the active product direction. The "no payment / no
+> settlement / no trust system today" rule is now enforced at
+> the platform level by ISS-0 §13 +
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> §5 (Tier 4–T5).
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Current use:** the runtime-mode and feature-flag discipline
+> remains useful for **closed-alpha ops continuity**. The
+> marketplace / fee / rental-revenue framing is superseded.
+> **Do not use for:** current roadmap, fee planning, payment
+> integration, marketplace launch sequencing, public-beta
+> sequencing. Body unchanged.
+
 ## 0. Window
 
 CoRent operates in a **pre-revenue validation window** anchored on the

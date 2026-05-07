@@ -2,18 +2,22 @@
 
 _Recorded: 2026-04-30_
 
-> **Repositioning note (2026-05-07).** This document remains the
-> **current direction for the CoRent vertical** (fee model,
-> geography, design maturity, flow-first principle). **Platform-
-> level direction now lives in
-> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).**
-> CoRent is repositioned as the **first vertical proof** of the
-> AI Interaction Layer thesis. On platform-level questions
-> (primitives, guardrail policy, cross-vertical scope), the
-> platform thesis wins; on CoRent-specific questions (fee shape,
-> categories, copy, smoke ops), this document wins. No body
-> changes below — read the platform thesis first when arriving
-> cold.
+> **Status:** Historical / Former Vertical Direction
+> **Scope:** CoRent discovery path and former rental-marketplace
+> thesis (fee model, geography, design maturity, flow-first
+> principle).
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md).
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Current use:** context only.
+> **Do not use for:** current roadmap, marketplace growth,
+> payment / trust / rental expansion, fee-shape planning,
+> category wedge selection.
+>
+> **This document no longer drives active product direction.** It
+> is preserved as a record of the discovery path that produced
+> the platform primitives we now build on. Body unchanged.
 
 ## 0. Purpose & Versioning
 

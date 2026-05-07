@@ -1,20 +1,26 @@
 # CoRent Product Flow Completion Plan
 
-> **Status:** Current — umbrella implementation plan
-> **Scope:** Path from "skeleton-passing → product-UX-passing":
-> milestone tracker, summaries of LLM / payment / location /
-> design completion (each graduating to its own dedicated doc when
-> the slice starts), and §10 cross-link to the CIE architecture
-> plan
-> **Last reviewed:** 2026-05-06 (recorded 2026-05-05)
-> **Read before:** any non-trivial runtime PR; planning the next
-> slice; aligning with the CIE roadmap phases
-> **Do not use for:** strategic architecture (use
-> [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md));
-> the closed-alpha banlist (use
-> [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md));
-> the cold-start wedge (use
-> [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md))
+> **Status:** Historical / Former Vertical Execution Plan
+> **Scope:** "Skeleton-passing → product-UX-passing" milestone
+> tracker for the CoRent rental-marketplace vertical, with
+> summaries of LLM / payment / location / design completion that
+> were each meant to graduate to their own dedicated doc.
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)
+> + [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
+> (still current as **implementation architecture** for the
+> platform thesis).
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Read before:** nothing on the active roadmap. Read for
+> orientation if you want to understand how the rental-
+> marketplace milestones were sequenced before the pivot.
+> **Do not use for:** current roadmap, current planning, current
+> milestone definitions. Sections describing CIE / platform
+> architecture should be read against the current
+> [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
+> + [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md);
+> **on conflict, those win**. Body unchanged.
 
 _Recorded: 2026-05-05. Author: founder + Claude. Posture: closed-alpha._
 

@@ -1,21 +1,33 @@
 # CoRent Closed-Alpha Quality Gates
 
-> **Status:** Guardrail — master cross-cutting rules for the closed-alpha
-> **Scope:** Banned copy phrases, server/local separation, LLM
-> candidate-only rules, DTO/projection rules, password sign-in
-> posture, wanted-try-request posture, and links to the smoke ops
-> kit + slice plans
-> **Last reviewed:** 2026-05-06
-> **Read before:** every runtime PR, especially any user-facing
-> copy change, public DTO change, LLM-related change, or
-> /admin/cockpit change
+> **Status:** Guardrail (closed-alpha surfaces only)
+> **Scope:** banned copy phrases, server / local separation, LLM
+> candidate-only rules, DTO / projection rules, password sign-in
+> posture, wanted-try-request posture, and links to the smoke
+> ops kit. **Applies to existing closed-alpha CoRent surfaces
+> only**; new platform work is governed by
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md).
+> **Last reviewed:** 2026-05-07 (relabeled "closed-alpha
+> surfaces only" per the 2026-05-07 platform pivot —
+> [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)).
+> **Read before:** every runtime change to an existing
+> closed-alpha CoRent surface (especially any user-facing copy
+> change, public DTO change, LLM-related change, or
+> /admin/cockpit change). For **new platform-primitive work**,
+> read [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> instead — that is the platform-level safety standard.
 > **Do not use for:** strategic architecture (use
 > [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md));
 > visual tokens (use
 > [`corent_design_system_bw_v1.md`](corent_design_system_bw_v1.md));
-> security review of DB / auth / payment / file upload / location
-> work (use
-> [`corent_security_gate_note.md`](corent_security_gate_note.md))
+> security review of DB / auth / payment / file upload /
+> location work (use
+> [`corent_security_gate_note.md`](corent_security_gate_note.md));
+> any **platform-level** safety question (use
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md));
+> implying the CoRent rental marketplace is the active product
+> direction (the active direction is
+> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)).
 
 > **Cross-reference (2026-05-07).** Platform-level safety
 > standard lives in

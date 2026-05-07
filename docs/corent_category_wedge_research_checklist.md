@@ -1,5 +1,23 @@
 # CoRent category wedge research checklist
 
+> **Status:** Historical / Discovery Artifact
+> **Scope:** founder-side per-category prioritization tool for
+> the CoRent rental-marketplace vertical (try-before-buy value,
+> seller fear, logistics, condition baseline, responsibility-
+> framing difficulty, price sensitivity, AI readiness lift).
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md).
+> The checklist helped surface the AI Interaction Layer thesis;
+> it no longer guides active rental category work.
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Read before:** nothing on the active roadmap. Read for
+> orientation when a future external wedge needs a similar
+> per-domain scoring rubric.
+> **Do not use for:** current roadmap, rental category
+> selection, CoRent supply seeding, marketplace expansion. Body
+> unchanged.
+
 _Companion to [`corent_product_direction_v2.md`](corent_product_direction_v2.md),
 [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md),
 [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md),

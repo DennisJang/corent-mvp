@@ -2,6 +2,28 @@
 
 _Recorded: 2026-04-30_
 
+> **Status:** Deferred / Blocked by ISS-0
+> **Scope:** former CoRent legal / trust posture (C2C marketplace
+> framing, no wallet, partner-mediated payment, regulated-
+> language ban, fee positioning).
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)
+> as the active product direction. The regulated-language
+> discipline below is enforced today through
+> [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md)
+> banlist + [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> §4.7 / §4.8 / §5 risk tiers.
+> **Last reviewed:** 2026-05-07 (demoted to Deferred per the
+> 2026-05-07 platform pivot).
+> **Read before:** nothing on the active roadmap. Read only if a
+> future slice contemplates payment / trust / legal / insurance
+> / deposit / rental-liability work — and that slice is gated
+> by ISS-0 Tier 4–T5 + a separate founder approval.
+> **Do not use for:** current roadmap, payment integration, fee
+> calculation, trust-score design, deposit / escrow / settlement
+> work, insurance framing, claim / dispute design. All of these
+> are blocked by ISS-0 §13. Body unchanged.
+
 ## 0. Purpose & Scope
 
 CoRent MVP v1 is browser-demoable on `main` (see

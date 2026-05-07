@@ -1,5 +1,27 @@
 # CoRent readiness copy experiment backlog
 
+> **Status:** Pattern Source
+> **Scope:** pre-approved Korean copy variants for the readiness
+> card, the seller readiness panel, the request confirmation
+> panel, the search match-reason pills, and the wanted-try-
+> request form (§10).
+> **Reusable pattern:** the closed-vocabulary copy backlog →
+> banlist-clean variant → tester round → winner selection
+> discipline. This is the pattern that survives; the rental-
+> copy roadmap does not.
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md).
+> Future platform copy experiments (e.g.
+> `PreActionChecklistBlock` content) will reuse this discipline.
+> **Last reviewed:** 2026-05-07 (demoted to Pattern Source per
+> the 2026-05-07 platform pivot).
+> **Read before:** any future ComponentBlock-registry slice that
+> needs to express a copy-variant backlog generically.
+> **Do not use for:** active rental-copy roadmap, marketplace
+> growth copy, public-launch copy. Body unchanged; existing
+> closed-alpha CoRent surfaces may still pick variants from it
+> as alpha-ops continuity.
+
 _Companion to [`smoke_runs/readiness_feedback_decision_aid.md`](smoke_runs/readiness_feedback_decision_aid.md),
 [`smoke_runs/readiness_feedback_taxonomy.md`](smoke_runs/readiness_feedback_taxonomy.md),
 [`smoke_runs/readiness_round_report_template.md`](smoke_runs/readiness_round_report_template.md),

@@ -1,6 +1,6 @@
 # CoRent docs — hierarchy index
 
-_Last reviewed: 2026-05-07 (safety standard v0 added). Maintainer: founder + Claude._
+_Last reviewed: 2026-05-07 (platform pivot — CoRent demoted to Historical). Maintainer: founder + Claude._
 
 This index exists so a future agent (Claude, Codex, or a human
 reviewer arriving cold) **does not treat stale docs as current
@@ -10,15 +10,22 @@ are smoke records, and a few are historical context. This file
 labels each, defines a recommended reading order, and identifies
 likely-historical docs without deleting or moving them.
 
-> **Repositioning note (2026-05-07).** The internal thesis has
-> been updated. The company-level direction is now an **AI
-> Interaction Layer for complex websites**, captured in
-> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).
-> CoRent remains alive and active, but is repositioned as the
-> **first vertical proof** of the platform thesis (AI-guided
-> try-before-buy commerce flow). All `corent_*` docs in §1–§4
-> below are now **vertical / product docs under the platform
-> thesis**; the platform thesis sits above them on conflict.
+> **Pivot note (2026-05-07).** The active product direction is
+> the **AI Interaction Layer** captured in
+> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md).
+> **CoRent (the rental marketplace / store / try-before-buy
+> commerce thesis) is no longer an active product direction.**
+> CoRent code, surfaces, and docs continue to exist on disk and
+> the closed-alpha ops stack still runs while it remains useful,
+> but `corent_*` docs **must not drive current roadmap**. They
+> are kept as Historical / Pattern Source / Discovery
+> Artifact / Deferred — see §1 below for the new band layout.
+> Implementation architecture for the platform thesis lives in
+> [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md);
+> the filename is CoRent-flavored but the substance is platform-
+> shaped and current.
 
 > **Safety standard note (2026-05-07).** The internal product
 > safety standard for the AI Interaction Layer is
@@ -36,22 +43,31 @@ When a doc in this repo conflicts with a higher-tier doc, the
 higher-tier doc wins. The tier order is:
 
 1. **CLAUDE.md** (root of the repo). Project-wide ground rules.
-2. **Platform thesis** —
+2. **Platform pivot note** —
+   [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md).
+   The decision record: CoRent is no longer an active product
+   direction; the AI Interaction Layer primitive system is.
+3. **Platform thesis** —
    [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).
    Highest-level product direction (the "why").
-3. **Interaction Safety Standard** —
+4. **Interaction Safety Standard** —
    [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md).
    What is allowed at the platform level (risk tiers + 10
    safety principles).
-4. **Current source of truth** (`§1` below). Vertical / product
-   direction for CoRent + macro architecture (CIE).
-5. **Active implementation plans** (`§2`).
-6. **Quality gates / guardrails** (`§3`).
-7. **Design system** (`§4`).
-8. **Smoke runs / tester operations** (`§5`).
-9. **Reference / setup** (`§6`).
-10. **Historical / context only** (`§7`). Read for orientation;
-    do not use for current scope.
+5. **Current source of truth** (`§1` below). Implementation
+   architecture for the platform thesis + closed-alpha ops
+   posture. **CoRent vertical-direction docs are no longer in
+   this band** — they live in §7 Historical.
+6. **Active implementation plans** (`§2`). Pattern sources only
+   after the pivot; no active CoRent slice plans.
+7. **Quality gates / guardrails** (`§3`).
+8. **Design system** (`§4`).
+9. **Smoke runs / tester operations** (`§5`). Closed-alpha
+   alpha-ops historical run data; not product direction.
+10. **Reference / setup** (`§6`).
+11. **Historical / context only** (`§7`). Read for orientation;
+    do not use for current scope. **All `corent_*` product /
+    marketplace direction docs now sit here** after the pivot.
 
 This is an **index**, not a redaction. Nothing has been deleted
 or moved.
@@ -74,46 +90,52 @@ section in a separate docs-only PR — never silently.
 
 ## §1. Current source of truth
 
-These define the product's wedge, identity, and macro
-architecture **right now**. Read them before any other doc when
-you arrive cold. Within §1, the **platform thesis is highest**;
-everything else is vertical / product / posture / workflow.
+These define the active product direction (platform thesis +
+safety standard + decision record), the implementation
+architecture, the workflow, and the (one) posture doc that
+genuinely cuts across the platform. **CoRent vertical-direction
+docs are no longer in this band** — they have been demoted to
+§7 Historical with new status headers per the pivot.
 
 | File | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md) | **Current — platform thesis (highest)** | AI Interaction Layer for complex websites; primitive model (KnowledgeSource / ComponentBlock / Action / Guardrail / Planner / HumanReview / AnalyticsEvent / Integration); guardrail-first posture; decision rules; non-goals | Status header pinned. Highest-level product direction below `CLAUDE.md`. CoRent docs below are now vertical / product docs **under** this thesis. |
-| [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md) | **Current — internal product safety standard** | Risk tier model (T0–T5); 10 core safety principles; ComponentBlock / Action / KnowledgeSource / LLM / InteractionIntent / AuditEvent safety rules; allow / block lists; pre-work decision checklist | Status header pinned. Sits between the platform thesis (the "why") and the CIE implementation / project guardrails (the "how"). Not a certification claim; borrows vocabulary from OWASP LLM Top 10, NIST AI RMF, and ISO/IEC 42001 only as reference frameworks. |
-| [`corent_product_direction_v2.md`](corent_product_direction_v2.md) | **Current — CoRent vertical direction** | Product direction (Korea-wide, fee model, design maturity, flow-first) for the **CoRent vertical** | Wins over `corent_context_note.md` and `corent_functional_mvp_intent_rules.md` on every conflict. Sits **under** the platform thesis: CoRent is the first vertical proof. |
-| [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md) | **Current — implementation architecture** | CoRent Interactive Experience (CIE) — the AI-native try-before-buy interface, layered architecture, block-recipe UI orchestration, closed tool set, deterministic-vs-LLM split | Status header pinned in the file. CIE is the **internal implementation name** for the platform thesis during the closed-alpha window. Phases align with `corent_product_flow_completion_plan.md`. |
-| [`corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md) | **Current (umbrella)** | Path from "skeleton-passing → product-UX-passing", milestone tracker | Status header pinned. §10 cross-links the CIE plan. |
-| [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md) | **Current (posture)** | Pre-revenue posture, runtime modes, feature-flag table, validation metrics | Posture is in force until `2026-07-13` AND explicit founder + legal/payment readiness approval. |
-| [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md) | **Current (posture)** | C2C marketplace framing, no wallet, partner-mediated payment, regulated-language ban | Wins on every regulated-language question. |
-| [`corent_defensibility_note.md`](corent_defensibility_note.md) | **Current (posture)** | Disclosure boundaries (what is public vs. partner-only) | Read before any external-facing copy. |
-| [`agent_loop.md`](agent_loop.md) | **Current (workflow)** | Claude ↔ Codex workflow + approval gates (visual-system change, schema, payment, etc.) | The user is the final approver on every gate. |
+| [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md) | **Current — decision record** | The strategic decision to wind CoRent down as an active product direction and treat the AI Interaction Layer primitive system as the main product. Defines the four future labels (Platform Core / Alpha Ops / Historical / Deferred) and the next build target. | Status header pinned. Read before any product-direction work or any decision about whether to revive a CoRent surface. |
+| [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md) | **Current — platform thesis (highest)** | AI Interaction Layer for complex websites; primitive model (KnowledgeSource / ComponentBlock / Action / Guardrail / Planner / HumanReview / AnalyticsEvent / Integration); guardrail-first posture; decision rules; non-goals | Status header pinned. Highest-level product direction below `CLAUDE.md`. |
+| [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md) | **Current — internal product safety standard** | Risk tier model (T0–T5); 10 core safety principles; ComponentBlock / Action / KnowledgeSource / LLM / InteractionIntent / AuditEvent safety rules; allow / block lists; pre-work decision checklist | Status header pinned. Sits between the platform thesis (the "why") and the implementation architecture / project guardrails (the "how"). Not a certification claim; borrows vocabulary from OWASP LLM Top 10, NIST AI RMF, and ISO/IEC 42001 only as reference frameworks. |
+| [`platform_repositioning_audit_2026-05-07.md`](platform_repositioning_audit_2026-05-07.md) | **Current — classification audit** | Read-only repository classification into 6 bands: Platform Core / CoRent Vertical Proof / Closed-alpha Operations / Deferred / Historical / Needs Repositioning Later. Stop-list + continue-list + next primitive roadmap + non-actions list. | Status header pinned. Companion to the pivot note. |
+| [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md) | **Current — implementation architecture** | The AI-native try-before-buy interface, layered architecture, block-recipe UI orchestration, closed tool set, deterministic-vs-LLM split. **Filename is CoRent-flavored; the substance is platform-shaped and current.** | Status header pinned. The repositioning audit flagged the filename for a future rename; do not rename in this PR. |
+| [`corent_defensibility_note.md`](corent_defensibility_note.md) | **Current (posture)** | Disclosure boundaries (what is public vs. partner-only). | Read before any external-facing copy. |
+| [`agent_loop.md`](agent_loop.md) | **Current (workflow)** | Claude ↔ Codex workflow + approval gates (visual-system change, schema, payment, etc.). | The user is the final approver on every gate. |
 
 ## §2. Active implementation plans
 
-Slices that are **actively driving the next runtime PRs**. When
-a plan is finished, it stays here as historical context until a
-docs-only PR moves it to §7.
+There are **no active CoRent slice plans** after the 2026-05-07
+pivot. The next runtime PRs are platform-primitive PRs per
+[`platform_repositioning_audit_2026-05-07.md`](platform_repositioning_audit_2026-05-07.md)
+§11 (ComponentBlock registry v1 → Action registry v1 →
+BrandProfile v1 → GuardrailPolicy v1 → AnalyticsEvent taxonomy
+v1). When a primitive slice plan is written, it lands here.
 
-| File | Status | Scope | Notes |
-| --- | --- | --- | --- |
-| [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md) | **Active Plan** | Cold-start wedge: turn `/search` empty state into a demand signal via `feedback_submissions.kind = "wanted_item"` | Status header pinned. PR 2 has shipped (`/search` empty CTA + form). PR 3 has shipped (founder review workflow on `/admin/cockpit`). PR 4–6 future. |
-| [`corent_next_actions_2026-05-05.md`](corent_next_actions_2026-05-05.md) | **Active Plan (companion)** | 10-task list after the 2026-05-05 first remote smoke | Several items have shipped (smoke ops checklist patch, responsibility copy, seller approve/decline, my-requests page, feedback status workflow). The list itself remains the canonical near-term backlog. |
-| [`corent_readiness_copy_experiment_backlog.md`](corent_readiness_copy_experiment_backlog.md) | **Active (copy)** | Pre-approved Korean copy variants for readiness card, seller readiness panel, request confirmation, search match-reason, and §10 wanted-try-request | Source of every new user-facing string before it lands in code. |
-| [`corent_category_wedge_research_checklist.md`](corent_category_wedge_research_checklist.md) | **Active (research)** | Per-category try-before-buy value × seller fear × logistics × condition baseline × responsibility 기준 difficulty × pricing × AI-readiness lift | Founder updates per round. Wedge graduation rule lives here. |
+The previous CoRent slice plans have moved to §7 Historical
+with a **Pattern Source** label. The patterns they encode
+(UnmetIntentCaptureBlock, PreActionChecklistBlock, copy-variant
+backlog, category research) remain useful for primitive design
+but do not drive a CoRent product roadmap.
 
 ## §3. Quality gates / guardrails
 
 Cross-cutting rules every PR must satisfy. They are not slice
-plans; they are constraints.
+plans; they are constraints. **Platform-level safety governance
+now sits in
+[`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+(§1).** The docs below are guardrails for the closed-alpha
+surfaces still on disk; they do not extend the platform.
 
 | File | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md) | **Guardrail (master)** | Banned copy phrases, server/local separation, LLM candidate-only rules, DTO/projection rules, password sign-in posture, wanted-try-request posture | Status header pinned. Pinned by `src/lib/copy/copyGuardrails.test.ts` and source-level tests. |
+| [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md) | **Guardrail (closed-alpha surfaces only)** | Banned copy phrases, server/local separation, LLM candidate-only rules, DTO/projection rules, password sign-in posture, wanted-try-request posture | Pinned by `src/lib/copy/copyGuardrails.test.ts` and source-level tests. **Applies to existing closed-alpha CoRent surfaces only**; new platform work is governed by `interaction_safety_standard_v0.md`. |
 | [`corent_security_gate_note.md`](corent_security_gate_note.md) | **Guardrail (security)** | Security-review gate for DB / auth / payment / file upload / location work | Read before any of those surfaces. |
-| [`corent_closed_alpha_provisioning_workflow.md`](corent_closed_alpha_provisioning_workflow.md) | **Guardrail (auth/identity)** | Manual provisioning workflow for `profiles` + `seller_profiles` + `borrower_profiles`. No auto-provisioning anywhere | Sign-in routes pin this rule. |
+| [`corent_closed_alpha_provisioning_workflow.md`](corent_closed_alpha_provisioning_workflow.md) | **Guardrail (alpha-ops auth/identity)** | Manual provisioning workflow for `profiles` + `seller_profiles` + `borrower_profiles`. No auto-provisioning anywhere | Sign-in routes pin this rule. **Closed-alpha ops only**; not a platform contract. |
 | [`mvp_security_guardrails.md`](mvp_security_guardrails.md) | **Guardrail (general)** | MVP security guardrails and posture | Older but still active. |
 
 ## §4. Design system
@@ -181,6 +203,28 @@ comes up. These are not strategic.
 
 Read these for orientation. **Do not use for current scope.** A
 later doc supersedes them on every conflict.
+
+After the 2026-05-07 platform pivot
+([`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)),
+the previously "Current" CoRent vertical-direction docs and
+"Active" CoRent slice plans have been demoted into this band.
+They remain on disk; they do not drive roadmap.
+
+### CoRent vertical direction + plans (demoted 2026-05-07)
+
+| File | Why historical |
+| --- | --- |
+| [`corent_product_direction_v2.md`](corent_product_direction_v2.md) | **Former vertical direction.** Defined the CoRent rental / try-before-buy direction. Superseded as active direction by [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md) + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md). |
+| [`corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md) | **Former vertical execution plan.** "Skeleton-passing → product-UX-passing" milestone tracker for the rental marketplace. CIE-related sections live on in [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md) (still current). |
+| [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md) | **Pattern Source.** Cold-start wedge slice plan; PR 2 + PR 3 shipped. The reusable shape is `UnmetIntentCaptureBlock`. The slice plan no longer drives a CoRent roadmap. |
+| [`corent_next_actions_2026-05-05.md`](corent_next_actions_2026-05-05.md) | **Superseded backlog.** 10-task list after the first remote smoke. Several items shipped; the list is not the canonical near-term backlog after the pivot. |
+| [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md) | **Deferred / Blocked by ISS-0.** Payment / trust / legal / insurance / deposit / rental-liability work is not active. The regulated-language ban inside it remains useful as guardrail context. |
+| [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md) | **Closed-alpha operations posture (historical).** Feature-flag table and runtime-mode discipline remain useful for closed-alpha continuity, but the marketplace / fee / rental framing is superseded. |
+| [`corent_externalization_architecture_v1.md`](corent_externalization_architecture_v1.md) | **Former vertical externalization plan.** Local-mock → Supabase externalization for the rental marketplace. Useful pattern reference for future platform persistence work. |
+| [`corent_category_wedge_research_checklist.md`](corent_category_wedge_research_checklist.md) | **Discovery artifact.** Helped surface the Interaction Layer thesis. No longer guides active rental category work. |
+| [`corent_readiness_copy_experiment_backlog.md`](corent_readiness_copy_experiment_backlog.md) | **Pattern source.** Reusable for `PreActionChecklistBlock` / future copy experiments. Not active rental-copy roadmap. |
+
+### Earlier history (already historical before 2026-05-07)
 
 | File | Why historical |
 | --- | --- |

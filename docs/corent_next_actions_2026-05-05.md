@@ -2,6 +2,23 @@
 
 _Companion to [`docs/corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md)._
 
+> **Status:** Historical / Superseded Backlog
+> **Scope:** the 10-task list captured after the 2026-05-05
+> first remote smoke for the CoRent rental-marketplace vertical.
+> Several items shipped (smoke ops checklist patch, responsibility
+> copy, seller approve / decline, my-requests page, feedback
+> status workflow). The list is preserved as a record.
+> **Superseded by:** [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)
+> §9 (next build target) + [`platform_repositioning_audit_2026-05-07.md`](platform_repositioning_audit_2026-05-07.md)
+> §11 (next primitive roadmap). Active backlog now lives there.
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Read before:** nothing on the active roadmap.
+> **Do not use for:** current backlog, current sprint planning,
+> current PR sequencing. The next two PRs after this pivot are
+> ComponentBlock registry v1 and Action registry v1, not items
+> from this list. Body unchanged.
+
 The next 10 tasks after the first successful corent-dev remote
 smoke. Each task has a one-PR boundary. **None of them activate
 real money movement, real lifecycle past `requested`, or remove

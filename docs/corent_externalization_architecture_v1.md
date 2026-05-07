@@ -1,5 +1,23 @@
 # CoRent Externalization Architecture v1
 
+> **Status:** Historical / Former Vertical Externalization Plan
+> **Scope:** the local-mock → Supabase externalization plan for
+> the CoRent rental-marketplace vertical.
+> **Superseded by:** [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+> + [`platform_pivot_note_2026-05-07.md`](platform_pivot_note_2026-05-07.md)
+> as the active product direction. The patterns it captures
+> (typed adapter seam, deny-by-default RLS, server-only
+> projection, mock-first / real-server gated) remain reusable
+> for future platform-side persistence work.
+> **Last reviewed:** 2026-05-07 (demoted to Historical per the
+> 2026-05-07 platform pivot).
+> **Read before:** nothing on the active roadmap. Read for
+> orientation when designing platform persistence shape later.
+> **Do not use for:** current roadmap, marketplace launch
+> sequencing, KYC, public beta, mobile apps. Body unchanged.
+
+_Original metadata, retained for context:_
+
 Status: docs-only architecture plan
 Scope: same-browser local MVP → closed-alpha external-tester architecture
 Not in scope: production launch, payments, KYC, public beta, mobile apps

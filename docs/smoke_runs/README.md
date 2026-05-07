@@ -2,6 +2,14 @@
 
 _See also the master docs index: [`../README.md`](../README.md)._
 
+> **Pivot note (2026-05-07).** After
+> [`../platform_pivot_note_2026-05-07.md`](../platform_pivot_note_2026-05-07.md),
+> these files are **historical alpha run data**. They are kept
+> for traceability and for tester-quote reference. They are
+> **not product direction.** A future smoke round may continue
+> while it remains useful for surfacing platform-primitive
+> edges, but it will not redefine roadmap.
+
 ## What lives in this folder
 
 - **Smoke run templates** — reusable scaffolding for founder-run
@@ -21,20 +29,25 @@ _See also the master docs index: [`../README.md`](../README.md)._
 These files are **run records and templates**. They do **not**
 override:
 
-- the current product architecture in
-  [`../corent_interactive_experience_architecture.md`](../corent_interactive_experience_architecture.md)
-  + [`../corent_product_direction_v2.md`](../corent_product_direction_v2.md);
-- the closed-alpha guardrails in
+- the active product direction in
+  [`../platform_thesis_ai_interaction_layer.md`](../platform_thesis_ai_interaction_layer.md)
+  + [`../platform_pivot_note_2026-05-07.md`](../platform_pivot_note_2026-05-07.md);
+- the platform safety standard in
+  [`../interaction_safety_standard_v0.md`](../interaction_safety_standard_v0.md);
+- the implementation architecture in
+  [`../corent_interactive_experience_architecture.md`](../corent_interactive_experience_architecture.md);
+- the closed-alpha-surfaces guardrails in
   [`../corent_closed_alpha_quality_gates.md`](../corent_closed_alpha_quality_gates.md);
 - the BW Swiss Grid v1 visual system in
-  [`../corent_design_system_bw_v1.md`](../corent_design_system_bw_v1.md);
-- the active slice plans in
-  [`../corent_wanted_try_request_slice_plan.md`](../corent_wanted_try_request_slice_plan.md)
-  and [`../corent_product_flow_completion_plan.md`](../corent_product_flow_completion_plan.md).
+  [`../corent_design_system_bw_v1.md`](../corent_design_system_bw_v1.md).
 
-If a smoke record disagrees with one of those higher-tier docs,
-the higher-tier doc is right and the smoke record is dated. A
-smoke record's value is the verbatim signal it captured at one
+The previously-active CoRent slice plans
+([`../corent_wanted_try_request_slice_plan.md`](../corent_wanted_try_request_slice_plan.md),
+[`../corent_product_flow_completion_plan.md`](../corent_product_flow_completion_plan.md))
+are now Historical / Pattern Source after the 2026-05-07 pivot.
+If a smoke record disagrees with any current-source doc above,
+the current-source doc is right and the smoke record is dated.
+A smoke record's value is the verbatim signal it captured at one
 point in time — not a license to redefine product scope.
 
 ## How to use these files
