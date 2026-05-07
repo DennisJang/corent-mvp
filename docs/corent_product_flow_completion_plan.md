@@ -1,5 +1,21 @@
 # CoRent Product Flow Completion Plan
 
+> **Status:** Current — umbrella implementation plan
+> **Scope:** Path from "skeleton-passing → product-UX-passing":
+> milestone tracker, summaries of LLM / payment / location /
+> design completion (each graduating to its own dedicated doc when
+> the slice starts), and §10 cross-link to the CIE architecture
+> plan
+> **Last reviewed:** 2026-05-06 (recorded 2026-05-05)
+> **Read before:** any non-trivial runtime PR; planning the next
+> slice; aligning with the CIE roadmap phases
+> **Do not use for:** strategic architecture (use
+> [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md));
+> the closed-alpha banlist (use
+> [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md));
+> the cold-start wedge (use
+> [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md))
+
 _Recorded: 2026-05-05. Author: founder + Claude. Posture: closed-alpha._
 
 > **Honesty banner.** The first real remote E2E smoke passed against

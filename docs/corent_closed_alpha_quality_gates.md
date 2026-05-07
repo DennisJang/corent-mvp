@@ -1,5 +1,22 @@
 # CoRent Closed-Alpha Quality Gates
 
+> **Status:** Guardrail — master cross-cutting rules for the closed-alpha
+> **Scope:** Banned copy phrases, server/local separation, LLM
+> candidate-only rules, DTO/projection rules, password sign-in
+> posture, wanted-try-request posture, and links to the smoke ops
+> kit + slice plans
+> **Last reviewed:** 2026-05-06
+> **Read before:** every runtime PR, especially any user-facing
+> copy change, public DTO change, LLM-related change, or
+> /admin/cockpit change
+> **Do not use for:** strategic architecture (use
+> [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md));
+> visual tokens (use
+> [`corent_design_system_bw_v1.md`](corent_design_system_bw_v1.md));
+> security review of DB / auth / payment / file upload / location
+> work (use
+> [`corent_security_gate_note.md`](corent_security_gate_note.md))
+
 CoRent is an AI-assisted try-before-buy protocol for high-consideration
 goods. The alpha should not read like a generic rental marketplace, a
 payment product, an insurance product, or an LLM-authoritative system.

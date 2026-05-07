@@ -1,4 +1,18 @@
 # CoRent Design System BW v1
+
+> **Status:** Design System — current visual system (the only one)
+> **Scope:** Palette (BW only + ink-opacity tokens), typography
+> (Helvetica), spacing scale, line hierarchy, radius, layout
+> philosophy, reference images, and visual-system change gate
+> **Last reviewed:** 2026-05-06 (last content update: 2026-04-29)
+> **Read before:** any visual / token / component change; any new
+> Korean copy that needs to render at the right type scale
+> **Do not use for:** copy banlist (use
+> [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md));
+> readiness card or wanted-form copy variants (use
+> [`corent_readiness_copy_experiment_backlog.md`](corent_readiness_copy_experiment_backlog.md));
+> the retired blue v0 system (do not use; superseded by this doc)
+
 _Last updated: 2026-04-29_
 ## Reference Images
 

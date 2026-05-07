@@ -1,5 +1,21 @@
 # CoRent Wanted Try Request — slice plan (docs-only)
 
+> **Status:** Active Plan — cold-start wedge
+> **Scope:** Turn `/search` empty state into a demand signal via
+> `feedback_submissions.kind = "wanted_item"`. PR 2 (search empty
+> CTA + form) and PR 3 (founder review workflow on
+> `/admin/cockpit`) shipped 2026-05-06. PR 4 (seller demand board)
+> and beyond remain future, gated by signal validation +
+> security review.
+> **Last reviewed:** 2026-05-06
+> **Read before:** any change to `/search` empty state, the
+> wanted-try-request form, the cockpit feedback panel, or any
+> seller-side demand surface
+> **Do not use for:** schema changes (no migration is in scope —
+> the slice deliberately reuses the existing `feedback_submissions`
+> table); seller demand board design (deferred to a future slice
+> with its own DTO projection + RLS review)
+
 _Companion to [`corent_product_direction_v2.md`](corent_product_direction_v2.md),
 [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md),
 [`corent_security_gate_note.md`](corent_security_gate_note.md),

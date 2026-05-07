@@ -1,5 +1,20 @@
 # CoRent Interactive Experience — architecture plan (docs-only)
 
+> **Status:** Current — strategic architecture
+> **Scope:** AI-native try-before-buy interface (CIE) — layered
+> architecture, block-recipe UI orchestration, closed tool set,
+> deterministic-vs-LLM split, 5-phase roadmap behind feature flags
+> **Last reviewed:** 2026-05-06
+> **Read before:** any LLM / Interactive Experience runtime PR;
+> any new tool wrapper, block recipe, or knowledge-registry entry;
+> any future provider-adapter slice
+> **Do not use for:** closed-alpha banlist authority (use
+> [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md));
+> visual-system rules (use
+> [`corent_design_system_bw_v1.md`](corent_design_system_bw_v1.md));
+> the wanted-try-request MVP scope (use
+> [`corent_wanted_try_request_slice_plan.md`](corent_wanted_try_request_slice_plan.md))
+
 _Author: founder + Claude. Recorded: 2026-05-06. Posture:
 closed-alpha + pre-revenue beta._
 
