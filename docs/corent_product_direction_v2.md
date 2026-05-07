@@ -2,6 +2,19 @@
 
 _Recorded: 2026-04-30_
 
+> **Repositioning note (2026-05-07).** This document remains the
+> **current direction for the CoRent vertical** (fee model,
+> geography, design maturity, flow-first principle). **Platform-
+> level direction now lives in
+> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).**
+> CoRent is repositioned as the **first vertical proof** of the
+> AI Interaction Layer thesis. On platform-level questions
+> (primitives, guardrail policy, cross-vertical scope), the
+> platform thesis wins; on CoRent-specific questions (fee shape,
+> categories, copy, smoke ops), this document wins. No body
+> changes below — read the platform thesis first when arriving
+> cold.
+
 ## 0. Purpose & Versioning
 
 This note declares the **CoRent Product Direction v2**.

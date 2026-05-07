@@ -18,6 +18,17 @@
 _Author: founder + Claude. Recorded: 2026-05-06. Posture:
 closed-alpha + pre-revenue beta._
 
+> **Repositioning note (2026-05-07).** This document is the
+> **implementation architecture** for the platform thesis in
+> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).
+> "CIE" is the current internal implementation name during the
+> closed-alpha window. The platform thesis is the higher-level
+> direction (KnowledgeSource / ComponentBlock / Action /
+> Guardrail / Planner / HumanReview / AnalyticsEvent /
+> Integration); this document remains the authority on **how**
+> CIE is built. Read the thesis first when in doubt about scope;
+> read this document when in doubt about implementation shape.
+
 _Companion to
 [`corent_product_direction_v2.md`](corent_product_direction_v2.md),
 [`corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md),

@@ -1,6 +1,6 @@
 # CoRent docs — hierarchy index
 
-_Last reviewed: 2026-05-06. Maintainer: founder + Claude._
+_Last reviewed: 2026-05-07. Maintainer: founder + Claude._
 
 This index exists so a future agent (Claude, Codex, or a human
 reviewer arriving cold) **does not treat stale docs as current
@@ -10,17 +10,31 @@ are smoke records, and a few are historical context. This file
 labels each, defines a recommended reading order, and identifies
 likely-historical docs without deleting or moving them.
 
+> **Repositioning note (2026-05-07).** The internal thesis has
+> been updated. The company-level direction is now an **AI
+> Interaction Layer for complex websites**, captured in
+> [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).
+> CoRent remains alive and active, but is repositioned as the
+> **first vertical proof** of the platform thesis (AI-guided
+> try-before-buy commerce flow). All `corent_*` docs in §1–§4
+> below are now **vertical / product docs under the platform
+> thesis**; the platform thesis sits above them on conflict.
+
 When a doc in this repo conflicts with a higher-tier doc, the
 higher-tier doc wins. The tier order is:
 
 1. **CLAUDE.md** (root of the repo). Project-wide ground rules.
-2. **Current source of truth** (`§1` below).
-3. **Active implementation plans** (`§2`).
-4. **Quality gates / guardrails** (`§3`).
-5. **Design system** (`§4`).
-6. **Smoke runs / tester operations** (`§5`).
-7. **Reference / setup** (`§6`).
-8. **Historical / context only** (`§7`). Read for orientation;
+2. **Platform thesis** —
+   [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md).
+   Highest-level product direction.
+3. **Current source of truth** (`§1` below). Vertical / product
+   direction for CoRent + macro architecture (CIE).
+4. **Active implementation plans** (`§2`).
+5. **Quality gates / guardrails** (`§3`).
+6. **Design system** (`§4`).
+7. **Smoke runs / tester operations** (`§5`).
+8. **Reference / setup** (`§6`).
+9. **Historical / context only** (`§7`). Read for orientation;
    do not use for current scope.
 
 This is an **index**, not a redaction. Nothing has been deleted
@@ -46,12 +60,14 @@ section in a separate docs-only PR — never silently.
 
 These define the product's wedge, identity, and macro
 architecture **right now**. Read them before any other doc when
-you arrive cold.
+you arrive cold. Within §1, the **platform thesis is highest**;
+everything else is vertical / product / posture / workflow.
 
 | File | Status | Scope | Notes |
 | --- | --- | --- | --- |
-| [`corent_product_direction_v2.md`](corent_product_direction_v2.md) | **Current** | Product direction (Korea-wide, fee model, design maturity, flow-first) | Wins over `corent_context_note.md` and `corent_functional_mvp_intent_rules.md` on every conflict. |
-| [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md) | **Current** | CoRent Interactive Experience (CIE) — the AI-native try-before-buy interface, layered architecture, block-recipe UI orchestration, closed tool set, deterministic-vs-LLM split | Status header pinned in the file. Phases align with `corent_product_flow_completion_plan.md`. |
+| [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md) | **Current — platform thesis (highest)** | AI Interaction Layer for complex websites; primitive model (KnowledgeSource / ComponentBlock / Action / Guardrail / Planner / HumanReview / AnalyticsEvent / Integration); guardrail-first posture; decision rules; non-goals | Status header pinned. Highest-level product direction below `CLAUDE.md`. CoRent docs below are now vertical / product docs **under** this thesis. |
+| [`corent_product_direction_v2.md`](corent_product_direction_v2.md) | **Current — CoRent vertical direction** | Product direction (Korea-wide, fee model, design maturity, flow-first) for the **CoRent vertical** | Wins over `corent_context_note.md` and `corent_functional_mvp_intent_rules.md` on every conflict. Sits **under** the platform thesis: CoRent is the first vertical proof. |
+| [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md) | **Current — implementation architecture** | CoRent Interactive Experience (CIE) — the AI-native try-before-buy interface, layered architecture, block-recipe UI orchestration, closed tool set, deterministic-vs-LLM split | Status header pinned in the file. CIE is the **internal implementation name** for the platform thesis during the closed-alpha window. Phases align with `corent_product_flow_completion_plan.md`. |
 | [`corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md) | **Current (umbrella)** | Path from "skeleton-passing → product-UX-passing", milestone tracker | Status header pinned. §10 cross-links the CIE plan. |
 | [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md) | **Current (posture)** | Pre-revenue posture, runtime modes, feature-flag table, validation metrics | Posture is in force until `2026-07-13` AND explicit founder + legal/payment readiness approval. |
 | [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md) | **Current (posture)** | C2C marketplace framing, no wallet, partner-mediated payment, regulated-language ban | Wins on every regulated-language question. |
@@ -193,24 +209,32 @@ read those files in order before opening any runtime PR.
 ### Before any runtime implementation (default order)
 
 1. `CLAUDE.md` (root of the repo).
-2. [`corent_product_direction_v2.md`](corent_product_direction_v2.md).
-3. [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md).
-4. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md).
-5. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md).
-6. [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md).
-7. The matching active slice plan in `§2` if your task touches one.
-8. The matching guardrail in `§3` if your task touches DB / auth /
+2. [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+   — platform thesis + decision rules + non-goals (§11–§12).
+3. [`corent_product_direction_v2.md`](corent_product_direction_v2.md)
+   — CoRent vertical direction.
+4. [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
+   — implementation architecture.
+5. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md).
+6. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md).
+7. [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md).
+8. The matching active slice plan in `§2` if your task touches one.
+9. The matching guardrail in `§3` if your task touches DB / auth /
    payment / file upload / location.
 
 ### Before visual / design changes
 
 1. `CLAUDE.md`.
-2. [`corent_design_system_bw_v1.md`](corent_design_system_bw_v1.md).
-3. [`agent_loop.md`](agent_loop.md) (visual-system change is a
+2. [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+   — §11 decision rules; §13 near-term implications include
+   "future design work should express the platform thesis
+   visually, but not now."
+3. [`corent_design_system_bw_v1.md`](corent_design_system_bw_v1.md).
+4. [`agent_loop.md`](agent_loop.md) (visual-system change is a
    gated approval).
-4. [`corent_readiness_copy_experiment_backlog.md`](corent_readiness_copy_experiment_backlog.md)
+5. [`corent_readiness_copy_experiment_backlog.md`](corent_readiness_copy_experiment_backlog.md)
    if you're shipping new Korean strings.
-5. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md)
+6. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md)
    (banned copy + server/local separation).
 
 ### Before smoke testing
@@ -228,27 +252,35 @@ read those files in order before opening any runtime PR.
 
 ### Before LLM / Interactive Experience work
 
-1. [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
+1. [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+   — §4 primitive model, §7 guardrail-first thesis, §11 decision
+   rules, §12 non-goals. The thesis is the **why** for every
+   CIE decision below.
+2. [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)
    (especially §6 block recipes, §7 tools, §8 LLM role, §10
    safety, §11 data/RAG, §12 cost).
-2. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md)
+3. [`corent_closed_alpha_quality_gates.md`](corent_closed_alpha_quality_gates.md)
    (LLM candidate-only rules + banlist).
-3. [`corent_security_gate_note.md`](corent_security_gate_note.md)
+4. [`corent_security_gate_note.md`](corent_security_gate_note.md)
    (real provider hits a gated review).
-4. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md)
+5. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md)
    (feature-flag posture).
 
 ### Before payment / trust / security work
 
-1. [`corent_security_gate_note.md`](corent_security_gate_note.md)
+1. [`platform_thesis_ai_interaction_layer.md`](platform_thesis_ai_interaction_layer.md)
+   — §12 non-goals explicitly defer payment/trust/legal
+   commitments and §11 decision rules require deterministic
+   authority + reversibility.
+2. [`corent_security_gate_note.md`](corent_security_gate_note.md)
    (the gate fires here).
-2. [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md)
+3. [`corent_legal_trust_architecture_note.md`](corent_legal_trust_architecture_note.md)
    (regulated-language ban + partner posture).
-3. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md)
+4. [`corent_pre_revenue_beta_plan.md`](corent_pre_revenue_beta_plan.md)
    (no fee, no payment, no settlement until the cutoff date AND
    readiness approval).
-4. [`mvp_security_guardrails.md`](mvp_security_guardrails.md).
-5. [`corent_security_review_phase1_2026-04-30.md`](corent_security_review_phase1_2026-04-30.md)
+5. [`mvp_security_guardrails.md`](mvp_security_guardrails.md).
+6. [`corent_security_review_phase1_2026-04-30.md`](corent_security_review_phase1_2026-04-30.md)
    for prior-review context.
 
 ## §10. Maintenance

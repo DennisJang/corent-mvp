@@ -6,6 +6,8 @@ You are working on CoRent, a Korea-wide AI rental/sharing MVP. Seoul is a demo/t
 
 Read these in order, every time you start non-trivial work. **The Direction v2 documents (1–5) win on conflict over the older context/intent-rule documents (7–9).**
 
+Before product-direction work specifically, also consult [`docs/README.md`](docs/README.md) (the documentation hierarchy index) and [`docs/platform_thesis_ai_interaction_layer.md`](docs/platform_thesis_ai_interaction_layer.md) (the platform-level thesis: AI Interaction Layer; CoRent is repositioned as the first vertical proof). The operational rules below are unchanged.
+
 1. `docs/corent_product_direction_v2.md` — current product direction (fee, geography, design maturity, flow-first principle)
 2. `docs/corent_legal_trust_architecture_note.md` — legal/trust architecture (C2C marketplace, no wallet, partner-mediated payment, regulated-language ban)
 3. `docs/corent_pre_revenue_beta_plan.md` — pre-revenue posture, runtime modes / feature flags, beta validation metrics
