@@ -7,6 +7,7 @@
 import { useRouter, useSearchParams } from "next/navigation";
 import { useEffect, useMemo, useState } from "react";
 import { ProductCard } from "@/components/ProductCard";
+import { SearchIntentSummary } from "@/components/SearchIntentSummary";
 import { WantedTryRequestForm } from "@/components/WantedTryRequestForm";
 import { CATEGORIES, CATEGORY_LABEL, type CategoryId } from "@/domain/categories";
 import type { DurationKey } from "@/domain/durations";
@@ -218,6 +219,10 @@ export function SearchResults() {
           </div>
         </div>
       </section>
+
+      {loadState === "loaded" ? (
+        <SearchIntentSummary intent={intent} />
+      ) : null}
 
       <section className="border-b border-black">
         <div className="container-main">

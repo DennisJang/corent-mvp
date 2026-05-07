@@ -224,6 +224,57 @@ describe("SearchResults — wanted-try-request CTA (cold-start wedge)", () => {
   });
 });
 
+describe("SearchResults — search intent summary (CIE Phase 1, step 02)", () => {
+  // Plan: docs/corent_interactive_experience_architecture.md (§3
+  // core loop) + the deterministic readiness service. The summary
+  // panel renders only on loadState === "loaded" so the
+  // "we heard you" copy never appears during a transient backend
+  // failure (which would imply we saved demand — we did not).
+
+  it("imports SearchIntentSummary only once, from @/components/SearchIntentSummary", () => {
+    expect(IMPORT_BLOB).toMatch(
+      /from\s+["']@\/components\/SearchIntentSummary["']/,
+    );
+    const importLines = IMPORT_BLOB.split(/\n/).filter((l) =>
+      l.includes("SearchIntentSummary"),
+    );
+    expect(importLines.length).toBe(1);
+  });
+
+  it("renders <SearchIntentSummary /> exactly once in the source", () => {
+    const renderHits = SRC.match(/<SearchIntentSummary\b/g) ?? [];
+    expect(renderHits.length).toBe(1);
+  });
+
+  it("gates the summary render on loadState === 'loaded' (never in loading or error)", () => {
+    expect(SRC).toMatch(
+      /loadState\s*===\s*["']loaded["']\s*\?\s*\(\s*<SearchIntentSummary/,
+    );
+  });
+
+  it("forwards the parsed intent into the summary as the only prop", () => {
+    const callMatch = SRC.match(/<SearchIntentSummary\s+([^/>]*)\/>/);
+    expect(callMatch).toBeTruthy();
+    const props = callMatch?.[1] ?? "";
+    expect(props).toMatch(/intent=\{intent\}/);
+    // The summary must NOT receive listings / loadState / search
+    // params / any wanted-write hook. It is a read-only panel
+    // bound to the parsed intent only.
+    for (const forbidden of [
+      "listings",
+      "filtered",
+      "loadState",
+      "params",
+      "rawInput",
+      "submitFeedback",
+      "wanted",
+      "router",
+    ]) {
+      expect(props).not.toMatch(new RegExp(`${forbidden}\\s*=`));
+    }
+  });
+});
+
 describe("SearchResults — design discipline", () => {
   it("does not introduce non-token color literals (only #000 / #fff allowed)", () => {
     const offenders: string[] = [];
