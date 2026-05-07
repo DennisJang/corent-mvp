@@ -81,10 +81,59 @@ export function PlatformInteractionDemo() {
 }
 
 function FlowDisplay({ purpose }: { purpose: PlatformDemoPurpose }) {
+  const insight = purpose.operatorInsight;
   return (
     <div className="border border-black bg-white">
       <SectionRow
         index="02"
+        heading="Operator view"
+        body="What the website owner would see for this visitor flow."
+      >
+        <div className="flex flex-col gap-6">
+          <div className="flex flex-col gap-1">
+            <span className="text-caption tracking-widest uppercase text-[color:var(--ink-60)]">
+              detected intent
+            </span>
+            <span className="text-title font-bold tracking-tight">
+              {insight.detectedIntentLabel}
+            </span>
+            <span className="text-small text-[color:var(--ink-80)]">
+              {insight.summary}
+            </span>
+          </div>
+
+          <InsightList
+            label="visitor friction"
+            items={insight.visitorFriction}
+          />
+          <InsightList
+            label="knowledge gaps"
+            items={insight.knowledgeGaps}
+          />
+          <InsightList
+            label="recommended site updates"
+            items={insight.recommendedSiteUpdates}
+          />
+          {insight.reviewReasons.length > 0 ? (
+            <InsightList
+              label="review reasons"
+              items={insight.reviewReasons}
+            />
+          ) : null}
+          <InsightList
+            label="free starting value"
+            items={insight.freePlanValue}
+          />
+
+          <p className="text-small font-medium tracking-tight border-t border-[color:var(--ink-12)] pt-4">
+            Start free — see what visitors are trying to do, where they get
+            stuck, and what to improve.
+          </p>
+        </div>
+      </SectionRow>
+
+      <SectionRow
+        index="03"
         heading="Component blocks (registered)"
         body="Deterministic sequence the planner would surface for this purpose."
       >
@@ -115,7 +164,7 @@ function FlowDisplay({ purpose }: { purpose: PlatformDemoPurpose }) {
       </SectionRow>
 
       <SectionRow
-        index="03"
+        index="04"
         heading="Proposed actions (registered)"
         body="The platform proposes actions for visitor confirmation only — never autonomously."
       >
@@ -146,7 +195,7 @@ function FlowDisplay({ purpose }: { purpose: PlatformDemoPurpose }) {
       </SectionRow>
 
       <SectionRow
-        index="04"
+        index="05"
         heading="Guardrail notes"
         body="Why some paths are allowed, escalated, or refused."
       >
@@ -181,7 +230,7 @@ function FlowDisplay({ purpose }: { purpose: PlatformDemoPurpose }) {
       </SectionRow>
 
       <SectionRow
-        index="05"
+        index="06"
         heading="Analytics events (preview only)"
         body="Names the platform would emit for this flow. Nothing is emitted from this page."
       >
@@ -207,6 +256,33 @@ function FlowDisplay({ purpose }: { purpose: PlatformDemoPurpose }) {
           })}
         </ul>
       </SectionRow>
+    </div>
+  );
+}
+
+function InsightList({
+  label,
+  items,
+}: {
+  label: string;
+  items: ReadonlyArray<string>;
+}) {
+  return (
+    <div className="flex flex-col gap-2">
+      <span className="text-caption tracking-widest uppercase text-[color:var(--ink-60)]">
+        {label}
+      </span>
+      <ul className="flex flex-col gap-2">
+        {items.map((item, i) => (
+          <li
+            key={`${label}-${i}`}
+            className="text-small text-[color:var(--ink-80)] flex items-baseline gap-3"
+          >
+            <span className="text-caption text-[color:var(--ink-60)]">·</span>
+            <span>{item}</span>
+          </li>
+        ))}
+      </ul>
     </div>
   );
 }

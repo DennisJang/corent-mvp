@@ -91,6 +91,15 @@ function buildValidPurpose(
       },
     ],
     analyticsEventSequence: ["interaction_started"],
+    operatorInsight: {
+      summary: "Fixture operator summary.",
+      detectedIntentLabel: "Fixture intent.",
+      visitorFriction: ["Fixture friction."],
+      knowledgeGaps: ["Fixture gap."],
+      recommendedSiteUpdates: ["Fixture update."],
+      reviewReasons: [],
+      freePlanValue: ["Fixture free value."],
+    },
   };
   return { ...base, ...overrides };
 }
@@ -372,6 +381,184 @@ describe("validatePlatformDemoModel — drift detection", () => {
         /guardrailNotes explanation must be a non-empty string/.test(e),
       ),
     ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------
+// Operator insight
+// ---------------------------------------------------------------
+
+describe("Platform demo model — operator insight", () => {
+  it("every purpose carries an operatorInsight object", () => {
+    for (const p of listPlatformDemoPurposes()) {
+      expect(p.operatorInsight).toBeTruthy();
+      expect(typeof p.operatorInsight.summary).toBe("string");
+      expect(p.operatorInsight.summary.trim().length).toBeGreaterThan(0);
+      expect(p.operatorInsight.detectedIntentLabel.trim().length).toBeGreaterThan(0);
+    }
+  });
+
+  it("required insight arrays (visitorFriction / knowledgeGaps / recommendedSiteUpdates / freePlanValue) are non-empty for every purpose", () => {
+    for (const p of listPlatformDemoPurposes()) {
+      expect(p.operatorInsight.visitorFriction.length).toBeGreaterThan(0);
+      expect(p.operatorInsight.knowledgeGaps.length).toBeGreaterThan(0);
+      expect(p.operatorInsight.recommendedSiteUpdates.length).toBeGreaterThan(0);
+      expect(p.operatorInsight.freePlanValue.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("contact_or_handoff has at least one reviewReason; lower-tier flows may have zero or more", () => {
+    const handoff = getPlatformDemoPurpose("contact_or_handoff")!;
+    expect(handoff.operatorInsight.reviewReasons.length).toBeGreaterThan(0);
+  });
+
+  it("validatePlatformDemoModel rejects a purpose with empty visitorFriction", () => {
+    const r = validatePlatformDemoModel([
+      buildValidPurpose({
+        operatorInsight: {
+          summary: "x",
+          detectedIntentLabel: "y",
+          visitorFriction: [],
+          knowledgeGaps: ["g"],
+          recommendedSiteUpdates: ["u"],
+          reviewReasons: [],
+          freePlanValue: ["v"],
+        },
+      }),
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(
+      r.errors.some((e) =>
+        /operatorInsight\.visitorFriction must declare at least one entry/.test(e),
+      ),
+    ).toBe(true);
+  });
+
+  it("validatePlatformDemoModel rejects empty freePlanValue", () => {
+    const r = validatePlatformDemoModel([
+      buildValidPurpose({
+        operatorInsight: {
+          summary: "x",
+          detectedIntentLabel: "y",
+          visitorFriction: ["f"],
+          knowledgeGaps: ["g"],
+          recommendedSiteUpdates: ["u"],
+          reviewReasons: [],
+          freePlanValue: [],
+        },
+      }),
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(
+      r.errors.some((e) =>
+        /operatorInsight\.freePlanValue must declare at least one entry/.test(e),
+      ),
+    ).toBe(true);
+  });
+
+  it("validatePlatformDemoModel rejects an empty operatorInsight string entry", () => {
+    const r = validatePlatformDemoModel([
+      buildValidPurpose({
+        operatorInsight: {
+          summary: "x",
+          detectedIntentLabel: "y",
+          visitorFriction: [""],
+          knowledgeGaps: ["g"],
+          recommendedSiteUpdates: ["u"],
+          reviewReasons: [],
+          freePlanValue: ["v"],
+        },
+      }),
+    ]);
+    expect(r.ok).toBe(false);
+    if (r.ok) return;
+    expect(
+      r.errors.some((e) =>
+        /operatorInsight\.visitorFriction\[0\] must be a non-empty string/.test(e),
+      ),
+    ).toBe(true);
+  });
+});
+
+// ---------------------------------------------------------------
+// Operator insight copy hygiene
+// ---------------------------------------------------------------
+
+describe("Platform demo model — operator insight copy hygiene", () => {
+  // No fake numeric metrics or guarantee-style claims.
+  const FAKE_METRIC_BANLIST: ReadonlyArray<string> = [
+    "conversion lift",
+    "lift in conversion",
+    "guaranteed results",
+    "guaranteed outcome",
+    "guaranteed conversion",
+    "guaranteed lift",
+    "% increase",
+    "% boost",
+    "x faster",
+    "instant setup",
+    "instant deployment",
+    "100% accurate",
+    "zero effort",
+    "no effort required",
+  ];
+  const NUMERIC_PERCENT = /\b\d+(?:\.\d+)?\s*%/;
+
+  function expectClean(location: string, value: string) {
+    const lower = value.toLowerCase();
+    for (const term of STRICT_CORENT_TERMS) {
+      if (lower.includes(term)) {
+        throw new Error(
+          `${location} mentions banned CoRent term '${term}': ${value}`,
+        );
+      }
+    }
+    for (const phrase of FORBIDDEN_ASSERTIVE_PHRASES) {
+      if (lower.includes(phrase)) {
+        throw new Error(
+          `${location} asserts a forbidden completion phrase '${phrase}': ${value}`,
+        );
+      }
+    }
+    for (const phrase of FAKE_METRIC_BANLIST) {
+      if (lower.includes(phrase)) {
+        throw new Error(
+          `${location} contains a fake-metric / guarantee-style phrase '${phrase}': ${value}`,
+        );
+      }
+    }
+    if (NUMERIC_PERCENT.test(value)) {
+      throw new Error(
+        `${location} contains a numeric percentage (fake metric): ${value}`,
+      );
+    }
+  }
+
+  it("operator insight strings carry no CoRent residue, no completion claims, no fake metrics or guarantee claims", () => {
+    for (const p of listPlatformDemoPurposes()) {
+      expectClean(`${p.id}.operatorInsight.summary`, p.operatorInsight.summary);
+      expectClean(
+        `${p.id}.operatorInsight.detectedIntentLabel`,
+        p.operatorInsight.detectedIntentLabel,
+      );
+      const arrays = [
+        ["visitorFriction", p.operatorInsight.visitorFriction],
+        ["knowledgeGaps", p.operatorInsight.knowledgeGaps],
+        ["recommendedSiteUpdates", p.operatorInsight.recommendedSiteUpdates],
+        ["reviewReasons", p.operatorInsight.reviewReasons],
+        ["freePlanValue", p.operatorInsight.freePlanValue],
+      ] as const;
+      for (const [field, list] of arrays) {
+        for (let i = 0; i < list.length; i++) {
+          expectClean(
+            `${p.id}.operatorInsight.${field}[${i}]`,
+            list[i]!,
+          );
+        }
+      }
+    }
   });
 });
 

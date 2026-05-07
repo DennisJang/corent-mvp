@@ -87,6 +87,24 @@ export default function PlatformPage() {
           </div>
         </section>
 
+        <section className="border-b border-black bg-white">
+          <div className="container-main py-12 flex flex-col gap-3">
+            <span className="text-caption tracking-widest uppercase text-[color:var(--ink-60)]">
+              what website owners get
+            </span>
+            <p className="text-title md:text-h3 font-bold tracking-tight max-w-prose">
+              Start free — see what visitors are trying to do, where they get
+              stuck, and what to improve.
+            </p>
+            <p className="text-small text-[color:var(--ink-80)] max-w-prose">
+              No payment in this demo, no real form, no data leaves the page.
+              Pick a purpose below; the operator panel updates with the
+              deterministic plan and the first concrete site updates we would
+              suggest.
+            </p>
+          </div>
+        </section>
+
         <PlatformInteractionDemo />
 
         <section className="border-t border-black">

@@ -94,6 +94,28 @@ export type PlatformDemoGuardrailNote = {
   explanation: string;
 };
 
+export type PlatformDemoOperatorInsight = {
+  // One-sentence summary of what visitors at this purpose
+  // are actually trying to accomplish.
+  summary: string;
+  // Short label the operator would see for the detected
+  // intent — phrased from the visitor's point of view.
+  detectedIntentLabel: string;
+  // Friction points the platform would surface to the operator.
+  visitorFriction: ReadonlyArray<string>;
+  // Concrete missing-explanation areas on the operator's site.
+  knowledgeGaps: ReadonlyArray<string>;
+  // Concrete copy / structure changes the operator could make.
+  recommendedSiteUpdates: ReadonlyArray<string>;
+  // Why parts of the flow route to human review, in operator
+  // language. Empty when the flow has no review escalation.
+  reviewReasons: ReadonlyArray<string>;
+  // What an operator gets without paying anything yet — kept
+  // strictly informational; this is a positioning value list,
+  // not a pricing claim.
+  freePlanValue: ReadonlyArray<string>;
+};
+
 export type PlatformDemoPurpose = {
   id: PlatformDemoPurposeId;
   label: string;
@@ -104,6 +126,7 @@ export type PlatformDemoPurpose = {
   proposedActionIds: ReadonlyArray<ActionId>;
   guardrailNotes: ReadonlyArray<PlatformDemoGuardrailNote>;
   analyticsEventSequence: ReadonlyArray<AnalyticsEventName>;
+  operatorInsight: PlatformDemoOperatorInsight;
 };
 
 // ---------------------------------------------------------------
@@ -146,6 +169,31 @@ const PLATFORM_DEMO_PURPOSES: ReadonlyArray<PlatformDemoPurpose> = [
       "component_block_presented",
       "action_presented",
     ],
+    operatorInsight: {
+      summary:
+        "Visitors want to know what the platform actually is and is not before going further.",
+      detectedIntentLabel: "Learn what this is.",
+      visitorFriction: [
+        "Visitors may confuse the platform with a chatbot or autoresponder.",
+        "Visitors may miss that the planner stays deterministic — no autonomous action.",
+      ],
+      knowledgeGaps: [
+        "Plain-language description of the platform's scope.",
+        "Side-by-side of what the platform does and does not do.",
+      ],
+      recommendedSiteUpdates: [
+        "Add a short 'what this is and is not' section near the hero.",
+        "Anchor each headline statement to a registered source citation.",
+      ],
+      reviewReasons: [
+        "When no registered source covers a question, the platform shows a calm source-gap message instead of guessing.",
+      ],
+      freePlanValue: [
+        "See the top visitor intents on this page.",
+        "See where the explanation has gaps.",
+        "Get suggested copy fixes for the first three gaps.",
+      ],
+    },
   },
   {
     id: "check_site_fit",
@@ -183,6 +231,31 @@ const PLATFORM_DEMO_PURPOSES: ReadonlyArray<PlatformDemoPurpose> = [
       "action_presented",
       "action_confirmed",
     ],
+    operatorInsight: {
+      summary:
+        "Visitors want to know whether this can work on their site before talking to anyone.",
+      detectedIntentLabel: "Check fit for my site.",
+      visitorFriction: [
+        "Visitors may not know what site type is a good fit.",
+        "Visitors may not know which next step is safe.",
+      ],
+      knowledgeGaps: [
+        "Clearer examples of supported website types.",
+        "Plain-language explanation of what the platform does not automate.",
+      ],
+      recommendedSiteUpdates: [
+        "Add a short 'who this is for' section.",
+        "Frame the next step as 'request a fit review', not as a one-click activation.",
+      ],
+      reviewReasons: [
+        "A human should review site-specific fit before the page makes site-specific promises.",
+      ],
+      freePlanValue: [
+        "See the top visitor intents.",
+        "See missing-explanation areas.",
+        "Get the first recommended site updates.",
+      ],
+    },
   },
   {
     id: "see_how_it_works",
@@ -219,6 +292,31 @@ const PLATFORM_DEMO_PURPOSES: ReadonlyArray<PlatformDemoPurpose> = [
       "component_block_presented",
       "action_presented",
     ],
+    operatorInsight: {
+      summary:
+        "Visitors want to walk through the primitives and see the boundary, not a slide deck.",
+      detectedIntentLabel: "See how the platform works.",
+      visitorFriction: [
+        "Visitors may bounce when the page hides the mechanics behind marketing copy.",
+        "Visitors may not realize the planner is deterministic and source-grounded.",
+      ],
+      knowledgeGaps: [
+        "Walkthrough of the registered primitives in plain language.",
+        "Linkable resources for each primitive.",
+      ],
+      recommendedSiteUpdates: [
+        "Add a primitive-by-primitive walkthrough page.",
+        "Offer a downloadable one-page summary of the safety standard.",
+      ],
+      reviewReasons: [
+        "External integrations not registered for this site stay refused at the guardrail layer.",
+      ],
+      freePlanValue: [
+        "See which primitives visitors stop at.",
+        "Get the first three documentation gaps.",
+        "Preview the events that would tell you what visitors were doing.",
+      ],
+    },
   },
   {
     id: "contact_or_handoff",
@@ -266,6 +364,32 @@ const PLATFORM_DEMO_PURPOSES: ReadonlyArray<PlatformDemoPurpose> = [
       "action_confirmed",
       "human_review_requested",
     ],
+    operatorInsight: {
+      summary:
+        "Visitors want a human, or want to start a request the platform will queue for review.",
+      detectedIntentLabel: "Talk to a person or start a request.",
+      visitorFriction: [
+        "Visitors may not see a clear path to a real human.",
+        "Visitors may worry the form will dispatch something they did not approve.",
+      ],
+      knowledgeGaps: [
+        "Operator response times, in plain language.",
+        "Which review steps the request will pass through.",
+      ],
+      recommendedSiteUpdates: [
+        "Add a short 'what happens next' note next to the contact CTA.",
+        "Surface the human-review notice before any preparation step.",
+      ],
+      reviewReasons: [
+        "Higher-stakes flows route through a human operator before any preparation or visible action.",
+        "Booking is request-only; a confirmed slot requires reviewer approval.",
+      ],
+      freePlanValue: [
+        "See where contact requests get stuck.",
+        "See which intents trigger human review most often.",
+        "Get the first three contact-flow improvements.",
+      ],
+    },
   },
 ];
 
@@ -366,6 +490,48 @@ export function validatePlatformDemoModel(
       errors.push(
         `${id}: start_booking_request must coexist with request_human_review (booking is request-only, human-review-required)`,
       );
+    }
+
+    // Operator insight shape.
+    const insight = p?.operatorInsight;
+    if (!insight || typeof insight !== "object") {
+      errors.push(`${id}: operatorInsight must be an object`);
+    } else {
+      if (typeof insight.summary !== "string" || insight.summary.trim().length === 0) {
+        errors.push(`${id}: operatorInsight.summary must be a non-empty string`);
+      }
+      if (
+        typeof insight.detectedIntentLabel !== "string" ||
+        insight.detectedIntentLabel.trim().length === 0
+      ) {
+        errors.push(
+          `${id}: operatorInsight.detectedIntentLabel must be a non-empty string`,
+        );
+      }
+      for (const [field, requireNonEmpty] of [
+        ["visitorFriction", true],
+        ["knowledgeGaps", true],
+        ["recommendedSiteUpdates", true],
+        ["reviewReasons", false],
+        ["freePlanValue", true],
+      ] as const) {
+        const arr = (insight as Record<string, unknown>)[field];
+        if (!Array.isArray(arr)) {
+          errors.push(`${id}: operatorInsight.${field} must be an array`);
+          continue;
+        }
+        if (requireNonEmpty && arr.length === 0) {
+          errors.push(`${id}: operatorInsight.${field} must declare at least one entry`);
+        }
+        for (let i = 0; i < arr.length; i++) {
+          const v = arr[i];
+          if (typeof v !== "string" || v.trim().length === 0) {
+            errors.push(
+              `${id}: operatorInsight.${field}[${i}] must be a non-empty string`,
+            );
+          }
+        }
+      }
     }
   }
 
