@@ -17,6 +17,19 @@
 > work (use
 > [`corent_security_gate_note.md`](corent_security_gate_note.md))
 
+> **Cross-reference (2026-05-07).** Platform-level safety
+> standard lives in
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> — risk tier model (T0–T5), 10 core safety principles, and
+> ComponentBlock / Action / KnowledgeSource / LLM /
+> InteractionIntent / AuditEvent rules that apply across every
+> vertical the AI Interaction Layer ever supports. This file
+> contains **CoRent / closed-alpha-specific** guardrails (banned
+> copy phrases, server / local separation, password sign-in
+> posture, wanted-try-request posture). The platform safety
+> standard wins on cross-cutting safety questions; this file
+> wins on CoRent-specific copy / posture questions.
+
 CoRent is an AI-assisted try-before-buy protocol for high-consideration
 goods. The alpha should not read like a generic rental marketplace, a
 payment product, an insurance product, or an LLM-authoritative system.

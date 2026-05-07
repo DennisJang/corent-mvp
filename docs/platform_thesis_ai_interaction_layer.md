@@ -14,6 +14,16 @@
 > [`corent_interactive_experience_architecture.md`](corent_interactive_experience_architecture.md)).
 > This document is the **why and what**, not the **how**.
 
+> **Safety posture (2026-05-07).** Safety posture for everything
+> in this thesis is governed by
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md):
+> risk tier model (T0–T5), 10 core safety principles,
+> ComponentBlock / Action / KnowledgeSource / LLM /
+> InteractionIntent / AuditEvent rules, allow / block lists,
+> and a pre-work decision checklist. On safety questions, the
+> safety standard wins; on direction questions (category,
+> primitives, market wedge), this thesis wins.
+
 ---
 
 ## 1. One-line thesis

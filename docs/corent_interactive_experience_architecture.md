@@ -29,6 +29,17 @@ closed-alpha + pre-revenue beta._
 > CIE is built. Read the thesis first when in doubt about scope;
 > read this document when in doubt about implementation shape.
 
+> **Safety standard (2026-05-07).** Implementation architecture
+> below must obey
+> [`interaction_safety_standard_v0.md`](interaction_safety_standard_v0.md)
+> — risk tier model (T0–T5), 10 core safety principles,
+> ComponentBlock / Action / KnowledgeSource / LLM /
+> InteractionIntent / AuditEvent rules, allow / block lists,
+> and the §14 pre-work decision checklist. On safety questions,
+> the safety standard wins; on implementation shape (block
+> recipes, tools, deterministic-vs-LLM split, 5-phase
+> roadmap), this document wins.
+
 _Companion to
 [`corent_product_direction_v2.md`](corent_product_direction_v2.md),
 [`corent_product_flow_completion_plan.md`](corent_product_flow_completion_plan.md),
